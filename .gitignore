@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+
+# VSCode
+.vscode/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
+docker-compose.override.yml
+
+# Others
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Ignore local config and secrets
+.env.*
+secrets.*
+
+# Ignore build outputs
+dist/
+build/
+
+# Ignore coverage
+coverage/
+*.cover
+*.coverage
+
+# Ignore test outputs
+test-results/
+
+# Ignore dashboard build
+services/dashboard/dist/
+
+# Ignore API/worker virtualenvs
+services/api/.venv/
+services/worker/.venv/
