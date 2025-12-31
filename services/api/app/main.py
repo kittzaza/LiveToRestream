@@ -342,8 +342,12 @@ def patch_target(target_id: int, payload: TargetPatch, request: Request, db: Ses
         rtmp_url = re.sub(r"\s+", "", payload.rtmp_url)
         _validate_target_rtmp_url_or_422(rtmp_url)
         target.rtmp_url = rtmp_url
+
     if payload.enabled is not None:
         target.enabled = payload.enabled
+        # If disabling, stop the restream process immediately
+        if payload.enabled is False:
+            _enqueue_stop_target(target.stream_id, target.id, force=True, source="target:patch_disable")
 
     db.add(target)
     db.commit()
