@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Restream Dashboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    label { display: block; font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
+    input { padding: 10px 12px; min-width: 260px; }
+    button { padding: 10px 12px; cursor: pointer; }
+    pre { background: #f5f5f5; padding: 12px; overflow: auto; }
+    .hint { font-size: 12px; opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <h1>Restream Dashboard</h1>
+
+  <h2>Create Stream</h2>
+  <div class="row">
+    <div>
+      <label for="name">Stream name</label>
+      <input id="name" placeholder="demo" />
+    </div>
+    <div>
+      <label for="stream_key">Stream key (letters only)</label>
+      <input id="stream_key" value="admin" placeholder="admin" />
+      <div class="hint">If empty, default is <b>admin</b> (or random if already used).</div>
+    </div>
+    <div style="align-self:end">
+      <button id="create">Create</button>
+    </div>
+  </div>
+
+  <h3>Result</h3>
+  <pre id="out">(waiting)</pre>
+
+  <script>
+    const out = document.getElementById('out');
+    const apiBase = (localStorage.getItem('apiBase') || 'http://localhost:8000').replace(/\/$/, '');
+
+    function show(obj) {
+      out.textContent = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    document.getElementById('create').addEventListener('click', async () => {
+      const name = document.getElementById('name').value.trim() || 'demo';
+      const streamKeyRaw = document.getElementById('stream_key').value.trim();
+
+      const payload = { name };
+      if (streamKeyRaw.length > 0) payload.stream_key = streamKeyRaw;
+
+      try {
+        const res = await fetch(apiBase + '/streams', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = text; }
+
+        if (!res.ok) {
+          show({ status: res.status, error: data });
+          return;
+        }
+
+        show(data);
+      } catch (e) {
+        show(String(e));
+      }
+    });
+
+    show({ apiBase, note: 'Use Create to generate a stream key.' });
+  </script>
+</body>
+</html>

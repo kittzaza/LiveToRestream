@@ -1,0 +1,467 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "docker: rebuild ingest+dashboard",
+			"type": "shell",
+			"command": "docker compose up -d --build ingest dashboard",
+			"isBackground": false
+		},
+		{
+			"label": "docker: ps",
+			"type": "shell",
+			"command": "docker compose ps",
+			"isBackground": false
+		},
+		{
+			"label": "ingest: check /stat CORS header",
+			"type": "shell",
+			"command": "curl -i http://localhost:8080/stat | findstr /i \"Access-Control-Allow-Origin Cache-Control\"",
+			"isBackground": false
+		},
+		{
+			"label": "ingest: show /stat headers",
+			"type": "shell",
+			"command": "$r = Invoke-WebRequest -Uri http://localhost:8080/stat -Method Get; $r.Headers | Format-List",
+			"isBackground": false
+		},
+		{
+			"label": "publish 20s test stream",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s = Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body '{\"name\":\"follow-test\"}'; $k=$s.stream_key; \"Key=$k\"; docker compose exec -T worker ffmpeg -hide_banner -loglevel error -re -f lavfi -i \"testsrc=size=640x360:rate=30\" -f lavfi -i \"sine=frequency=1000:sample_rate=44100\" -t 20 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv (\"rtmp://ingest/live/{0}\" -f $k); \"DONE\"",
+			"isBackground": false
+		},
+		{
+			"label": "publish 20s test stream (fix quoting)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $body='{\"name\":\"follow-test\"}'; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body $body; $k=$s.stream_key; Write-Host (\"Key=$k\"); docker compose exec -T worker ffmpeg -hide_banner -loglevel error -re -f lavfi -i \"testsrc=size=640x360:rate=30\" -f lavfi -i \"sine=frequency=1000:sample_rate=44100\" -t 20 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv \"rtmp://ingest/live/$k\"",
+			"isBackground": false
+		},
+		{
+			"label": "debug: create stream print",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body '{\"name\":\"follow-debug\"}'; $s | ConvertTo-Json -Depth 6; Write-Host (\"stream_key=\" + $s.stream_key)",
+			"isBackground": false
+		},
+		{
+			"label": "debug: create stream print 2",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body '{\"name\":\"follow-debug2\"}'; $s | ConvertTo-Json -Depth 6; Write-Host ('stream_key=' + $s.stream_key)",
+			"isBackground": false
+		},
+		{
+			"label": "debug: create stream print 3 (valid JSON)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body '{\"name\":\"follow-debug3\"}'; $s | ConvertTo-Json -Depth 6; Write-Host ('stream_key=' + $s.stream_key)",
+			"isBackground": false
+		},
+		{
+			"label": "debug: create stream print 4 (no backslashes)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body '{\"name\":\"follow-debug4\"}'; $s | ConvertTo-Json -Depth 6; Write-Host ('stream_key=' + $s.stream_key)",
+			"isBackground": false
+		},
+		{
+			"label": "debug: create stream print 5 (raw JSON)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body '{\"name\":\"follow-debug5\"}'; $s | ConvertTo-Json -Depth 6; Write-Host ('stream_key=' + $s.stream_key)",
+			"isBackground": false
+		},
+		{
+			"label": "debug: create stream print (ConvertTo-Json)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $body = @{ name='follow-debug-json' } | ConvertTo-Json; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body $body; $s | ConvertTo-Json -Depth 6; Write-Host ('stream_key=' + $s.stream_key)",
+			"isBackground": false
+		},
+		{
+			"label": "publish 15s follow stream",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $body = @{ name='follow-live' } | ConvertTo-Json; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body $body; $k=$s.stream_key; Write-Host ('Key=' + $k); docker compose exec -T worker ffmpeg -hide_banner -loglevel error -re -f lavfi -i \"testsrc=size=640x360:rate=30\" -f lavfi -i \"sine=frequency=1000:sample_rate=44100\" -t 15 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv (\"rtmp://ingest/live/$k\")",
+			"isBackground": false
+		},
+		{
+			"label": "publish 15s follow stream (url var)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $body = @{ name='follow-live2' } | ConvertTo-Json; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body $body; $k=$s.stream_key; $url = \"rtmp://ingest/live/$k\"; Write-Host ('Key=' + $k); docker compose exec -T worker ffmpeg -hide_banner -loglevel error -re -f lavfi -i \"testsrc=size=640x360:rate=30\" -f lavfi -i \"sine=frequency=1000:sample_rate=44100\" -t 15 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv $url",
+			"isBackground": false
+		},
+		{
+			"label": "publish 15s follow stream (no double quotes)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $body = @{ name='follow-live3' } | ConvertTo-Json; $s=Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body $body; $k=$s.stream_key; $url = 'rtmp://ingest/live/' + $k; Write-Host ('Key=' + $k); docker compose exec -T worker ffmpeg -hide_banner -loglevel error -re -f lavfi -i 'testsrc=size=640x360:rate=30' -f lavfi -i 'sine=frequency=1000:sample_rate=44100' -t 15 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv $url",
+			"isBackground": false
+		},
+		{
+			"label": "stat: list live stream names",
+			"type": "shell",
+			"command": "$xml = (Invoke-WebRequest -Uri http://localhost:8080/stat -Method Get).Content; [xml]$doc = $xml; $app = $doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; if ($null -eq $app) { 'no live app' } else { $names = @(); foreach ($s in @($app.live.stream)) { if ($s.name) { $names += [string]$s.name } }; $names | Sort-Object -Unique }",
+			"isBackground": false
+		},
+		{
+			"label": "inspect: targets that point to ingest/live",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $streams = Invoke-RestMethod -Headers $h http://localhost:8000/streams; foreach ($s in $streams) { $t = Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/{0}/targets\" -f $s.id) | Where-Object { $_.enabled -and ($_.rtmp_url -match '://(ingest|localhost|127\\.0\\.0\\.1|192\\.168\\.)' -and $_.rtmp_url -match '/live') }; foreach ($x in $t) { [PSCustomObject]@{ stream_id=$s.id; stream_key=$s.stream_key; target_id=$x.id; target_name=$x.name; rtmp_url=$x.rtmp_url } } } | Format-Table -AutoSize",
+			"isBackground": false
+		},
+		{
+			"label": "inspect: targets that point to ingest/live (safe)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $rows = @(); $streams = Invoke-RestMethod -Headers $h http://localhost:8000/streams; foreach ($s in $streams) { $targets = Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/{0}/targets\" -f $s.id); foreach ($x in $targets) { if (-not $x.enabled) { continue }; $u = [string]$x.rtmp_url; if ($u -match '/live' -and $u -match '://(ingest|localhost|127\\.0\\.0\\.1|192\\.168\\.)') { $rows += [PSCustomObject]@{ stream_id=$s.id; stream_key=$s.stream_key; target_id=$x.id; target_name=$x.name; rtmp_url=$u } } } }; if ($rows.Count -eq 0) { 'No enabled targets to ingest/live found' } else { $rows | Sort-Object stream_id,target_id | Format-Table -AutoSize }",
+			"isBackground": false
+		},
+		{
+			"label": "diagnose current publisher + targets",
+			"type": "shell",
+			"command": "$xml = (Invoke-WebRequest -Uri http://localhost:8080/stat -Method Get).Content; [xml]$doc = $xml; $app = $doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; $names=@(); foreach ($s in @($app.live.stream)) { if ($s.name) { $names += [string]$s.name } }; $names = $names | Sort-Object -Unique; 'PUBLISHING:'; $names; if ($names.Count -eq 1) { $key=$names[0]; $h=@{ Authorization='Bearer admin' }; $resolved=Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/resolve?stream_key=$key\"); 'RESOLVED_STREAM:'; $resolved | ConvertTo-Json -Depth 6; 'TARGETS:'; Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/{0}/targets\" -f $resolved.id) | ConvertTo-Json -Depth 6 }",
+			"isBackground": false
+		},
+		{
+			"label": "repro: publish then start restreams",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s = Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body (@{ name='repro-ingestdrop' } | ConvertTo-Json); $null = Invoke-RestMethod -Method Post (\"http://localhost:8000/streams/{0}/targets\" -f $s.id) -Headers $h -ContentType 'application/json' -Body (@{ name='echo'; rtmp_url='rtmp://ingest/out/echo-repro' } | ConvertTo-Json); $k=$s.stream_key; Write-Host ('StreamId=' + $s.id); Write-Host ('Key=' + $k); $pub = (\"ffmpeg -hide_banner -loglevel error -re -f lavfi -i 'testsrc=size=640x360:rate=30' -f lavfi -i 'sine=frequency=1000:sample_rate=44100' -t 25 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv rtmp://ingest/live/{0} >/tmp/pub.log 2>&1 &\" -f $k); docker compose exec -T worker sh -lc $pub; Start-Sleep -Seconds 3; Write-Host 'POST /start'; Invoke-RestMethod -Method Post (\"http://localhost:8000/streams/{0}/start\" -f $s.id) -Headers $h | ConvertTo-Json; Start-Sleep -Seconds 2; Write-Host 'STAT STREAMS:'; $xml=(Invoke-WebRequest -Uri http://localhost:8080/stat).Content; [xml]$doc=$xml; $app=$doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; foreach ($st in @($app.live.stream)) { if ($st.name) { [string]$st.name } }; Write-Host 'INGEST LOG TAIL:'; docker compose logs --tail=40 ingest; Write-Host 'WORKER LOG TAIL:'; docker compose logs --tail=60 worker",
+			"isBackground": false
+		},
+		{
+			"label": "repro step1: create stream+target save file",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $s = Invoke-RestMethod -Method Post http://localhost:8000/streams -Headers $h -ContentType 'application/json' -Body (@{ name='repro-ingestdrop' } | ConvertTo-Json); Invoke-RestMethod -Method Post (\"http://localhost:8000/streams/{0}/targets\" -f $s.id) -Headers $h -ContentType 'application/json' -Body (@{ name='echo'; rtmp_url='rtmp://ingest/out/echo-repro' } | ConvertTo-Json) | Out-Null; $o = [PSCustomObject]@{ id=$s.id; stream_key=$s.stream_key }; $o | ConvertTo-Json | Set-Content -Encoding UTF8 .\\repro_stream.json; Get-Content .\\repro_stream.json",
+			"isBackground": false
+		},
+		{
+			"label": "repro step2: start background publisher",
+			"type": "shell",
+			"command": "$o = Get-Content .\\repro_stream.json | ConvertFrom-Json; $k=$o.stream_key; $cmd = \"ffmpeg -hide_banner -loglevel error -re -f lavfi -i 'testsrc=size=640x360:rate=30' -f lavfi -i 'sine=frequency=1000:sample_rate=44100' -t 30 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv rtmp://ingest/live/$k >/tmp/pub.log 2>&1 &\"; docker compose exec -T worker sh -lc $cmd; 'publisher_started'",
+			"isBackground": false
+		},
+		{
+			"label": "repro step2b: check publisher via /stat",
+			"type": "shell",
+			"command": "$xml=(Invoke-WebRequest -Uri http://localhost:8080/stat).Content; [xml]$doc=$xml; $app=$doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; foreach ($st in @($app.live.stream)) { if ($st.name) { [string]$st.name } }",
+			"isBackground": false
+		},
+		{
+			"label": "repro step2: publisher (30s)",
+			"type": "shell",
+			"command": "$o = Get-Content .\\repro_stream.json | ConvertFrom-Json; $k = [string]$o.stream_key; $url = 'rtmp://ingest/live/' + $k; Write-Host ('PUBLISH_URL=' + $url); docker compose exec -T worker ffmpeg -hide_banner -loglevel error -re -f lavfi -i \"testsrc=size=640x360:rate=30\" -f lavfi -i \"sine=frequency=1000:sample_rate=44100\" -t 30 -c:v libx264 -preset veryfast -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f flv $url",
+			"isBackground": true
+		},
+		{
+			"label": "repro step2b: stat now",
+			"type": "shell",
+			"command": "$xml=(Invoke-WebRequest -Uri http://localhost:8080/stat).Content; [xml]$doc=$xml; $app=$doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; foreach ($st in @($app.live.stream)) { if ($st.name) { [string]$st.name } }",
+			"isBackground": false
+		},
+		{
+			"label": "repro step3: resolve 'test' and start",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $key='test'; $resolved=Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/resolve?stream_key=$key\"); 'RESOLVED:'; $resolved | ConvertTo-Json -Depth 6; 'TARGETS:'; $targets = Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/{0}/targets\" -f $resolved.id); $targets | ConvertTo-Json -Depth 6; 'POST /start'; Invoke-RestMethod -Method Post -Headers $h (\"http://localhost:8000/streams/{0}/start\" -f $resolved.id) | ConvertTo-Json; Start-Sleep 2; 'STAT AFTER:'; $xml=(Invoke-WebRequest -Uri http://localhost:8080/stat).Content; [xml]$doc=$xml; $app=$doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; foreach ($st in @($app.live.stream)) { if ($st.name) { [string]$st.name } }; 'INGEST TAIL:'; docker compose logs --tail=30 ingest",
+			"isBackground": false
+		},
+		{
+			"label": "check: stat streams",
+			"type": "shell",
+			"command": "$xml=(Invoke-WebRequest -Uri http://localhost:8080/stat).Content; [xml]$doc=$xml; $app=$doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; $names=@(); foreach ($st in @($app.live.stream)) { if ($st.name) { $names += [string]$st.name } }; $names | Sort-Object -Unique",
+			"isBackground": false
+		},
+		{
+			"label": "inspect: targets for stream key test",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $resolved=Invoke-RestMethod -Headers $h \"http://localhost:8000/streams/resolve?stream_key=test\"; $targets=Invoke-RestMethod -Headers $h (\"http://localhost:8000/streams/{0}/targets\" -f $resolved.id); $targets | Format-Table id,name,enabled,rtmp_url -AutoSize",
+			"isBackground": false
+		},
+		{
+			"label": "inspect: targets for test (robust)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $resolved=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/resolve?stream_key=test'; $targets=Invoke-RestMethod -Headers $h -Uri (('http://localhost:8000/streams/{0}/targets' -f $resolved.id)); $targets | Format-Table id,name,enabled,rtmp_url -AutoSize",
+			"isBackground": false
+		},
+		{
+			"label": "docker: rebuild api",
+			"type": "shell",
+			"command": "docker compose up -d --build api",
+			"isBackground": false
+		},
+		{
+			"label": "check: status endpoint while publishing",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $resolved=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/resolve?stream_key=test'; $st=Invoke-RestMethod -Headers $h -Uri (('http://localhost:8000/streams/{0}/status' -f $resolved.id)); $st | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "worker logs tail",
+			"type": "shell",
+			"command": "docker compose logs --tail=200 worker",
+			"isBackground": false
+		},
+		{
+			"label": "worker ffmpeg protocols",
+			"type": "shell",
+			"command": "docker compose exec -T worker ffmpeg -hide_banner -protocols | findstr /i \"rtmp rtmps\"",
+			"isBackground": false
+		},
+		{
+			"label": "api status test stream",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $resolved=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/resolve?stream_key=test'; Invoke-RestMethod -Headers $h -Uri (('http://localhost:8000/streams/{0}/status' -f $resolved.id)) | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "docker: rebuild worker",
+			"type": "shell",
+			"command": "docker compose up -d --build worker",
+			"isBackground": false
+		},
+		{
+			"label": "docker: ps after worker rebuild",
+			"type": "shell",
+			"command": "docker compose ps",
+			"isBackground": false
+		},
+		{
+			"label": "docker: ps worker api ingest",
+			"type": "shell",
+			"command": "docker compose ps worker api ingest",
+			"isBackground": false
+		},
+		{
+			"label": "worker logs last lines",
+			"type": "shell",
+			"command": "docker compose logs --tail=40 worker",
+			"isBackground": false
+		},
+		{
+			"label": "worker logs tail after fix",
+			"type": "shell",
+			"command": "docker compose logs --tail=200 worker",
+			"isBackground": false
+		},
+		{
+			"label": "worker: confirm rtmps support",
+			"type": "shell",
+			"command": "docker compose exec -T worker ffmpeg -hide_banner -protocols | Select-String -Pattern 'rtmp'",
+			"isBackground": false
+		},
+		{
+			"label": "worker: check ffmpeg pid 486",
+			"type": "shell",
+			"command": "docker compose exec -T worker sh -lc \"ps -o pid,args -p 486 || true\"",
+			"isBackground": false
+		},
+		{
+			"label": "worker: inspect ffmpeg cmdline via /proc",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c \"import sys, pathlib; p=pathlib.Path('/proc/486/cmdline'); print(p.exists()); print(p.read_bytes().replace(b'\\x00', b' ').decode('utf-8','ignore') if p.exists() else '')\"",
+			"isBackground": false
+		},
+		{
+			"label": "worker: tcp connect facebook 443",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c \"import socket; s=socket.create_connection(('live-api-s.facebook.com',443),timeout=5); print('ok', s.getpeername()); s.close()\"",
+			"isBackground": false
+		},
+		{
+			"label": "worker: dns resolve facebook",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c \"import socket; print(socket.gethostbyname_ex('live-api-s.facebook.com'))\"",
+			"isBackground": false
+		},
+		{
+			"label": "worker: dns resolve facebook (safe quotes)",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c 'import socket; print(socket.gethostbyname_ex(\"live-api-s.facebook.com\"))'",
+			"isBackground": false
+		},
+		{
+			"label": "worker: tcp connect facebook 443 (safe quotes)",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c 'import socket; s=socket.create_connection((\"live-api-s.facebook.com\",443),timeout=5); print(\"ok\", s.getpeername()); s.close()'",
+			"isBackground": false
+		},
+		{
+			"label": "worker: dns resolve facebook (pwsh quoting)",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c \"import socket; print(socket.gethostbyname_ex('live-api-s.facebook.com'))\"",
+			"isBackground": false
+		},
+		{
+			"label": "docker: rebuild worker (facebook transcode)",
+			"type": "shell",
+			"command": "docker compose up -d --build worker",
+			"isBackground": false
+		},
+		{
+			"label": "docker: wait ps",
+			"type": "shell",
+			"command": "docker compose ps worker",
+			"isBackground": false
+		},
+		{
+			"label": "docker: ps core services",
+			"type": "shell",
+			"command": "docker compose ps api ingest worker",
+			"isBackground": false
+		},
+		{
+			"label": "worker logs after transcode change",
+			"type": "shell",
+			"command": "docker compose logs --tail=120 worker",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream test after worker fix",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; $resolved=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/resolve?stream_key=test'; Invoke-RestMethod -Headers $h -Uri (('http://localhost:8000/streams/{0}/status' -f $resolved.id)) | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "stat: live stream names now",
+			"type": "shell",
+			"command": "$xml=(Invoke-WebRequest -Uri http://localhost:8080/stat).Content; [xml]$doc=$xml; $app=$doc.rtmp.server.application | Where-Object { $_.name -eq 'live' }; $names=@(); foreach ($st in @($app.live.stream)) { if ($st.name) { $names += [string]$st.name } }; $names | Sort-Object -Unique",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream 16",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status' | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "ingest+worker logs around now",
+			"type": "shell",
+			"command": "docker compose logs --tail=120 ingest worker",
+			"isBackground": false
+		},
+		{
+			"label": "logs: worker last 200",
+			"type": "shell",
+			"command": "docker compose logs --tail=200 worker",
+			"isBackground": false
+		},
+		{
+			"label": "api: restart stream 16",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Method Post -Headers $h -Uri 'http://localhost:8000/streams/16/restart' | ConvertTo-Json",
+			"isBackground": false
+		},
+		{
+			"label": "worker: ps ffmpeg",
+			"type": "shell",
+			"command": "docker compose exec -T worker sh -lc \"ps aux | grep -E '[f]fmpeg' || true\"",
+			"isBackground": false
+		},
+		{
+			"label": "worker: check shell",
+			"type": "shell",
+			"command": "docker compose exec -T worker ls -la /bin | head",
+			"isBackground": false
+		},
+		{
+			"label": "worker: ps aux (first 25)",
+			"type": "shell",
+			"command": "docker compose exec -T worker ps aux",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream 16 (after restart)",
+			"type": "shell",
+			"command": "Start-Sleep -Seconds 3; $h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status' | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "logs: worker tail after restart",
+			"type": "shell",
+			"command": "docker compose logs --tail=120 worker",
+			"isBackground": false
+		},
+		{
+			"label": "worker: find ffmpeg via /proc",
+			"type": "shell",
+			"command": "docker compose exec -T worker python -c \"import os,glob; hits=[]; \nfor d in glob.glob('/proc/[0-9]*'):\n  try:\n    cmd=open(d+'/cmdline','rb').read().replace(b'\\x00',b' ').decode('utf-8','ignore').strip()\n    if 'ffmpeg' in cmd:\n      hits.append((int(d.split('/')[-1]),cmd))\n  except Exception:\n    pass\nhits.sort();\nprint('\\n'.join([f'{pid} {cmd}' for pid,cmd in hits]) or 'NO_FFMPEG')\"",
+			"isBackground": false
+		},
+		{
+			"label": "worker: can pull ingest test?",
+			"type": "shell",
+			"command": "docker compose exec -T worker ffmpeg -hide_banner -loglevel error -i rtmp://ingest/live/test -t 1 -f null -",
+			"isBackground": false
+		},
+		{
+			"label": "api: poll status stream16 x5",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; 1..5 | ForEach-Object { $s=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status'; \"t=$_ state=$($s.targets[0].state) pid=$($s.targets[0].pid) updated=$($s.targets[0].updated_at)\"; Start-Sleep -Seconds 2 }",
+			"isBackground": false
+		},
+		{
+			"label": "api: poll status stream16 x5 (fixed)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; 1..5 | ForEach-Object { $i=$_; $s=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status'; \"i=$i state=$($s.targets[0].state) pid=$($s.targets[0].pid) updated=$($s.targets[0].updated_at)\"; Start-Sleep -Seconds 2 }",
+			"isBackground": false
+		},
+		{
+			"label": "api: poll status stream16 x5 (format)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; 1..5 | ForEach-Object { $i=$_; $s=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status'; Write-Output (\"i={0} state={1} pid={2} updated={3}\" -f $i, $s.targets[0].state, $s.targets[0].pid, $s.targets[0].updated_at); Start-Sleep -Seconds 2 }",
+			"isBackground": false
+		},
+		{
+			"label": "api: poll status stream16 x5 (concat)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; 1..5 | ForEach-Object { $i=$_; $s=Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status'; Write-Output ('i=' + $i + ' state=' + $s.targets[0].state + ' pid=' + $s.targets[0].pid + ' updated=' + $s.targets[0].updated_at); Start-Sleep -Seconds 2 }",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream 16 includes exit_code",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status' | ConvertTo-Json -Depth 7",
+			"isBackground": false
+		},
+		{
+			"label": "api: restart stream 16 again",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Method Post -Headers $h -Uri 'http://localhost:8000/streams/16/restart' | ConvertTo-Json",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream 16 after worker fix",
+			"type": "shell",
+			"command": "Start-Sleep -Seconds 2; $h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status' | ConvertTo-Json -Depth 7",
+			"isBackground": false
+		},
+		{
+			"label": "logs: worker error details now",
+			"type": "shell",
+			"command": "docker compose logs --tail=120 worker",
+			"isBackground": false
+		},
+		{
+			"label": "worker: has /bin/sh?",
+			"type": "shell",
+			"command": "docker compose exec -T worker /bin/sh -lc \"echo SH_OK\"",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream16 includes exit_code?",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status' | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "api: status stream 16 (youtube target)",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/status' | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		},
+		{
+			"label": "logs: worker filter youtube target=7",
+			"type": "shell",
+			"command": "docker compose logs --timestamps --tail=800 worker | Select-String -Pattern 'target=7|YouTube|youtube|live2|a\\.rtmp\\.youtube\\.com'",
+			"isBackground": false
+		},
+		{
+			"label": "api: stream 16 targets",
+			"type": "shell",
+			"command": "$h=@{ Authorization='Bearer admin' }; Invoke-RestMethod -Headers $h -Uri 'http://localhost:8000/streams/16/targets' | ConvertTo-Json -Depth 6",
+			"isBackground": false
+		}
+	]
+}

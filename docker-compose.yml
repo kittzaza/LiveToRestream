@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: restream
+      POSTGRES_PASSWORD: restream
+      POSTGRES_DB: restream
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restream -d restream"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./services/api
+    environment:
+      DATABASE_URL: postgresql+psycopg://restream:restream@postgres:5432/restream
+      REDIS_URL: redis://redis:6379/0
+      STREAM_KEY_SECRET: "CHANGE_ME__32+chars_minimum________________"
+      INGEST_RTMP_URL: rtmp://ingest/live
+      API_AUTH_TOKEN: "admin"
+      DASHBOARD_ORIGIN: "http://localhost:3000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2).read()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./services/worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      INGEST_RTMP_URL: rtmp://ingest/live
+      WORKER_NODE_NAME: worker-1
+    depends_on:
+      redis:
+        condition: service_healthy
+      ingest:
+        condition: service_started
+
+  ingest:
+    build:
+      context: ./services/ingest
+    ports:
+      - "1935:1935"
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./services/dashboard
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  redis_data:
