@@ -1,4 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+// ...existing code...
+// --- Validation helpers ---
+function isValidRtmpUrl(url: string) {
+  return /^rtmps?:\/\//i.test(url.trim());
+}
+function isValidStreamKey(key: string) {
+  // Basic: must not be empty, no spaces, min 4 chars
+  return !!key && key.trim().length >= 4 && !/\s/.test(key);
+}
 import {
   Activity,
   KeyRound,
@@ -259,7 +268,6 @@ export default function App() {
     })
   }
   // Use sorted targets everywhere
-  const targets = targetsRaw
   const [targetErrors, setTargetErrors] = useState<Record<number, string>>({})
   const [isEditingTarget, setIsEditingTarget] = useState(false)
   const [editingTargetId, setEditingTargetId] = useState<number | null>(null)
@@ -659,11 +667,53 @@ export default function App() {
     }
   }
 
+  // --- Validation state ---
+  const [rtmpUrlError, setRtmpUrlError] = useState<string | null>(null);
+  const [streamKeyError, setStreamKeyError] = useState<string | null>(null);
+
+  const validateTargetInputs = () => {
+    setRtmpUrlError(null);
+    setStreamKeyError(null);
+    if (newTargetPlatform === 'custom') {
+      if (!newTargetName.trim()) {
+        setError('Add target failed: Custom RTMP platform name is required');
+        return false;
+      }
+      if (!newTargetUrl.trim()) {
+        setRtmpUrlError('RTMP base URL (or full URL) is required');
+        return false;
+      }
+      if (!isValidRtmpUrl(newTargetUrl.trim())) {
+        setRtmpUrlError('RTMP URL ต้องขึ้นต้นด้วย rtmp:// หรือ rtmps://');
+        return false;
+      }
+      if (!newTargetPlatformKey.trim()) {
+        setStreamKeyError('Stream Key is required');
+        return false;
+      }
+      if (!isValidStreamKey(newTargetPlatformKey.trim())) {
+        setStreamKeyError('Stream Key ต้องมีความยาวอย่างน้อย 4 ตัวอักษร และไม่มีช่องว่าง');
+        return false;
+      }
+    } else {
+      if (!newTargetPlatformKey.trim()) {
+        setStreamKeyError('Stream Key is required');
+        return false;
+      }
+      if (!isValidStreamKey(newTargetPlatformKey.trim())) {
+        setStreamKeyError('Stream Key ต้องมีความยาวอย่างน้อย 4 ตัวอักษร และไม่มีช่องว่าง');
+        return false;
+      }
+    }
+    return true;
+  };
+
   const addTarget = async () => {
     if (!activeStreamId) {
       setError('Add target failed: load a stream key first')
       return
     }
+    if (!validateTargetInputs()) return;
     const platformInput = newTargetPlatformKey.replace(/\s+/g, '').trim()
     const isFullRtmpUrl = /^rtmps?:\/\//i.test(platformInput)
     const customPlatformName = newTargetName.trim()
@@ -693,14 +743,7 @@ export default function App() {
       if (customBaseOrFull && platformInput) return joinRtmpUrl(customBaseOrFull, platformInput)
       return customBaseOrFull
     })()
-    if (newTargetPlatform === 'custom' && !customPlatformName) {
-      setError('Add target failed: Custom RTMP platform name is required')
-      return
-    }
-    if (!rtmp_url) {
-      setError(newTargetPlatform === 'custom' ? 'Add target failed: RTMP base URL (or full URL) is required' : 'Add target failed: platform stream key is required')
-      return
-    }
+    // ...validation now handled above...
     const defaultName = (() => {
       switch (newTargetPlatform) {
         case 'youtube':
@@ -717,6 +760,8 @@ export default function App() {
     const name = newTargetPlatform === 'custom' ? customPlatformName : defaultName
 
     setIsAddingTarget(true)
+    setRtmpUrlError(null);
+    setStreamKeyError(null);
     try {
       const created = await api.addTarget(activeStreamId, { name, rtmp_url })
       setTargets((prev) => [created, ...prev])
@@ -947,32 +992,50 @@ export default function App() {
                               <input
                                 type="text"
                                 value={newTargetUrl}
-                                onChange={(e) => setNewTargetUrl(e.target.value)}
+                                onChange={(e) => {
+                                  setNewTargetUrl(e.target.value);
+                                  setRtmpUrlError(null);
+                                }}
+                                onBlur={() => {
+                                  if (newTargetUrl && !isValidRtmpUrl(newTargetUrl)) {
+                                    setRtmpUrlError('RTMP URL ต้องขึ้นต้นด้วย rtmp:// หรือ rtmps://');
+                                  }
+                                }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     addTarget()
                                     e.currentTarget.blur()
                                   }
                                 }}
-                                className="mt-1 w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-sky-500/50"
+                                className={`mt-1 w-full rounded border ${rtmpUrlError ? 'border-red-500/70' : 'border-white/10'} bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-sky-500/50`}
                                 placeholder="rtmp(s)://..."
                               />
+                              {rtmpUrlError && <div className="mt-1 text-xs text-red-400">{rtmpUrlError}</div>}
                             </div>
                             <div>
                               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stream Key</label>
                               <input
                                 type="text"
                                 value={newTargetPlatformKey}
-                                onChange={(e) => setNewTargetPlatformKey(e.target.value)}
+                                onChange={(e) => {
+                                  setNewTargetPlatformKey(e.target.value);
+                                  setStreamKeyError(null);
+                                }}
+                                onBlur={() => {
+                                  if (newTargetPlatformKey && !isValidStreamKey(newTargetPlatformKey)) {
+                                    setStreamKeyError('Stream Key ต้องมีความยาวอย่างน้อย 4 ตัวอักษร และไม่มีช่องว่าง');
+                                  }
+                                }}
                                 onKeyDown={(e) => {
                                   if (e.key === 'Enter') {
                                     addTarget()
                                     e.currentTarget.blur()
                                   }
                                 }}
-                                className="mt-1 w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-xs font-mono text-white outline-none focus:border-sky-500/50"
+                                className={`mt-1 w-full rounded border ${streamKeyError ? 'border-red-500/70' : 'border-white/10'} bg-black/30 px-3 py-2 text-xs font-mono text-white outline-none focus:border-sky-500/50`}
                                 placeholder="place stream key"
                               />
+                              {streamKeyError && <div className="mt-1 text-xs text-red-400">{streamKeyError}</div>}
                             </div>
                           </div>
                         ) : (
