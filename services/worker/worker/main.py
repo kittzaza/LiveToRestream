@@ -5,6 +5,9 @@ import os
 import signal
 import subprocess
 import time
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 import redis
@@ -97,16 +100,63 @@ def build_ffmpeg_cmd(input_url: str, output_url: str) -> list[str]:
     return base
 
 
+def _extract_ingest_stream_key(input_url: str) -> str | None:
+    prefix = (settings.ingest_rtmp_url or "").rstrip("/") + "/"
+    if input_url.startswith(prefix):
+        stream_key = input_url[len(prefix) :].strip("/")
+        return stream_key or None
+    return None
+
+
+def _ingest_has_stream(stream_key: str) -> bool:
+    try:
+        with urllib.request.urlopen(settings.ingest_stat_url, timeout=2) as resp:
+            xml = resp.read().decode("utf-8", errors="replace")
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return False
+
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return False
+
+    # Look for /rtmp/server/application[name='live']/live/stream/name == stream_key
+    for app in root.findall("./server/application"):
+        name_el = app.find("name")
+        if name_el is None or (name_el.text or "").strip() != "live":
+            continue
+        for stream in app.findall("./live/stream"):
+            stream_name_el = stream.find("name")
+            if stream_name_el is not None and (stream_name_el.text or "").strip() == stream_key:
+                return True
+    return False
+
+
+def wait_for_ingest_stream(stream_key: str, timeout_s: float) -> bool:
+    deadline = time.time() + max(0.0, timeout_s)
+    while time.time() < deadline:
+        if _ingest_has_stream(stream_key):
+            return True
+        time.sleep(1.0)
+    return _ingest_has_stream(stream_key)
+
+
 def main() -> None:
     r = _redis()
     group = "workers"
     consumer = settings.worker_node_name
 
-    # Ensure stream + group exists
+    # Ensure stream + group exists. In a real-world scenario, this might be an admin task,
+    # but for simple docker-compose setup, the worker can create it.
     try:
         r.xgroup_create("restream:jobs", group, id="0", mkstream=True)
+        print(f"[worker] created consumer group '{group}' on stream 'restream:jobs'", flush=True)
     except redis.exceptions.ResponseError as e:
-        if "BUSYGROUP" not in str(e):
+        if "BUSYGROUP" in str(e):
+            print(f"[worker] consumer group '{group}' already exists", flush=True)
+        else:
+            # If Redis is down, this will fail here, which is intended.
+            print(f"[worker] ERROR: failed to create consumer group: {e}", flush=True)
             raise
 
     procs: dict[tuple[str, str], ProcHandle] = {}
@@ -187,6 +237,19 @@ def main() -> None:
 
         stream_id, target_id = key
         input_url, output_url = params
+
+        ingest_key = _extract_ingest_stream_key(input_url)
+        if ingest_key:
+            set_status(stream_id, target_id, "starting")
+            ok = wait_for_ingest_stream(ingest_key, timeout_s=15.0)
+            if not ok:
+                print(
+                    f"[worker] input not ready stream={stream_id} target={target_id} key={ingest_key} (waiting for publish); will retry",
+                    flush=True,
+                )
+                schedule_retry(key)
+                return
+
         cmd = build_ffmpeg_cmd(input_url, output_url)
         seq = last_seq.get(key, 0)
         print(

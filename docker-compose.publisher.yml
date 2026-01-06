@@ -1,0 +1,8 @@
+services:
+  publisher:
+    # Override file for the built-in publisher service.
+    # Usage:
+    #   docker-compose -f docker-compose.yml -f docker-compose.publisher.yml up -d
+    environment:
+      PUBLISH_STREAM_KEY: test
+      PUBLISH_RTMP_URL: rtmp://ingest/live

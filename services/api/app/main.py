@@ -819,8 +819,6 @@ async def ingest_on_publish(request: Request, db: Session = Depends(get_db)):
 
     # Enqueue worker jobs only when restream is enabled for this stream.
     if stream.is_active:
-        db.refresh(stream)
-
         # If user queued per-target restarts while ingest was offline, apply them now.
         r = get_redis()
         any_pending = False
@@ -890,7 +888,9 @@ async def ingest_on_publish_done(request: Request, db: Session = Depends(get_db)
         f"restream:ingest:{stream.id}",
         mapping={
             "state": "offline",
-            "last_publish_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            # Do NOT bump last_publish_at here. It is used as a live heartbeat fallback,
+            # and updating it on publish end can incorrectly allow restream start while offline.
+            "last_publish_done_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         },
     )
     return PlainTextResponse("ok", status_code=200)

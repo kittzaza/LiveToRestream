@@ -255,10 +255,10 @@ export default function App() {
 
   const [targets, setTargetsRaw] = useState<TargetOut[]>([])
   // Always show Facebook targets first
-  const setTargets = (updater) => {
-    setTargetsRaw((prev) => {
-      const next = typeof updater === 'function' ? updater(prev) : updater
-      return [...next].sort((a, b) => {
+  const setTargets = (updater: ((prev: TargetOut[]) => TargetOut[]) | TargetOut[]) => {
+    setTargetsRaw((prev: TargetOut[]) => {
+      const next = typeof updater === 'function' ? (updater as (prev: TargetOut[]) => TargetOut[])(prev) : updater
+      return [...next].sort((a: TargetOut, b: TargetOut) => {
         const isFbA = a.name?.toLowerCase() === 'facebook' || a.rtmp_url?.includes('facebook.com')
         const isFbB = b.name?.toLowerCase() === 'facebook' || b.rtmp_url?.includes('facebook.com')
         if (isFbA && !isFbB) return -1
@@ -539,7 +539,7 @@ export default function App() {
       } else {
         updated = await api.patchTarget(id, { enabled: true })
       }
-      setTargets((prev) => prev.map((t) => (t.id === id ? updated : t)))
+      setTargets((prev: TargetOut[]) => prev.map((t: TargetOut) => (t.id === id ? updated : t)))
       clearTargetError(id)
     } catch (e: any) {
       setTargetApiError(id, 'Update target failed', e)
@@ -549,7 +549,7 @@ export default function App() {
   const updateTargetUrl = async (id: number, rtmp_url: string) => {
     try {
       const updated = await api.patchTarget(id, { rtmp_url })
-      setTargets((prev) => prev.map((t) => (t.id === id ? updated : t)))
+      setTargets((prev: TargetOut[]) => prev.map((t: TargetOut) => (t.id === id ? updated : t)))
       clearTargetError(id)
     } catch (e: any) {
       setTargetApiError(id, 'Update target failed', e)
@@ -590,7 +590,7 @@ export default function App() {
 
     try {
       const updated = await api.patchTarget(editingTargetId, { name, rtmp_url })
-      setTargets((prev) => prev.map((t) => (t.id === editingTargetId ? updated : t)))
+      setTargets((prev: TargetOut[]) => prev.map((t: TargetOut) => (t.id === editingTargetId ? updated : t)))
       clearTargetError(editingTargetId)
       cancelEditTarget()
     } catch (e: any) {
@@ -603,7 +603,7 @@ export default function App() {
     if (!ok) return
     try {
       await api.deleteTarget(id)
-      setTargets((prev) => prev.filter((t) => t.id !== id))
+      setTargets((prev: TargetOut[]) => prev.filter((t: TargetOut) => t.id !== id))
       clearTargetError(id)
     } catch (e: any) {
       setApiError('Delete failed', e)
@@ -764,7 +764,7 @@ export default function App() {
     setStreamKeyError(null);
     try {
       const created = await api.addTarget(activeStreamId, { name, rtmp_url })
-      setTargets((prev) => [created, ...prev])
+      setTargets((prev: TargetOut[]) => [created, ...prev])
       setNewTargetName('')
       setNewTargetUrl('')
       setNewTargetPlatform('youtube')
@@ -1105,6 +1105,11 @@ export default function App() {
                                 {pill.label}
                                 {exit !== null && exit !== undefined ? <span className="font-mono font-bold">exit {exit}</span> : null}
                               </span>
+                              {state === 'exited' && exit === 251 ? (
+                                <span className="text-[10px] font-semibold text-red-200">
+                                  FFmpeg can’t open the ingest input yet. Start OBS (publish to ingest) and verify the stream key.
+                                </span>
+                              ) : null}
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                 Last update:{' '}
                                 <span className="font-mono font-semibold text-slate-200">
