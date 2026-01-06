@@ -7,6 +7,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
@@ -109,6 +110,8 @@ def _extract_ingest_stream_key(input_url: str) -> str | None:
 
 
 def _ingest_has_stream(stream_key: str) -> bool:
+    parsed = urlparse(settings.ingest_rtmp_url)
+    app_name = ((parsed.path or "/").strip("/").split("/")[0] or "live").strip()
     try:
         with urllib.request.urlopen(settings.ingest_stat_url, timeout=2) as resp:
             xml = resp.read().decode("utf-8", errors="replace")
@@ -120,10 +123,10 @@ def _ingest_has_stream(stream_key: str) -> bool:
     except ET.ParseError:
         return False
 
-    # Look for /rtmp/server/application[name='live']/live/stream/name == stream_key
+    # Look for /rtmp/server/application[name='<app_name>']/live/stream/name == stream_key
     for app in root.findall("./server/application"):
         name_el = app.find("name")
-        if name_el is None or (name_el.text or "").strip() != "live":
+        if name_el is None or (name_el.text or "").strip() != app_name:
             continue
         for stream in app.findall("./live/stream"):
             stream_name_el = stream.find("name")
@@ -260,6 +263,18 @@ def main() -> None:
         time.sleep(0.5)
         rc = popen.poll()
         if rc is not None:
+            # Common transient: FFmpeg fails to open the RTMP input very early (often rc=251)
+            # even though nginx-rtmp already shows the stream in /stat. Treat this as a
+            # "starting/warming up" condition to avoid noisy exited alerts.
+            if rc == 251 and ingest_key and _ingest_has_stream(ingest_key):
+                print(
+                    f"[worker] input warming up stream={stream_id} target={target_id} seq={seq} key={ingest_key} rc={rc}; will retry",
+                    flush=True,
+                )
+                set_status(stream_id, target_id, "starting")
+                schedule_retry(key)
+                return
+
             print(
                 f"[worker] failed stream={stream_id} target={target_id} seq={seq} pid={popen.pid} rc={rc}",
                 flush=True,

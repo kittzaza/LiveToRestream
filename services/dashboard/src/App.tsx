@@ -1107,7 +1107,7 @@ export default function App() {
                               </span>
                               {state === 'exited' && exit === 251 ? (
                                 <span className="text-[10px] font-semibold text-red-200">
-                                  FFmpeg can’t open the ingest input yet. Start OBS (publish to ingest) and verify the stream key.
+                                  FFmpeg couldn’t read the ingest input yet. The worker will retry automatically.
                                 </span>
                               ) : null}
                               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">

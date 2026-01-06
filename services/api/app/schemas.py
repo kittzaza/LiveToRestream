@@ -38,6 +38,21 @@ class StreamResolveOut(BaseModel):
     created_at: dt.datetime
 
 
+class StreamKeyRotateIn(BaseModel):
+    stream_key: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z]+$",
+        description="Optional new stream key (English letters only). If omitted, a random letters-only key is generated.",
+    )
+
+
+class StreamKeyOut(BaseModel):
+    stream_id: int
+    stream_key: str
+
+
 class TargetCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     rtmp_url: str = Field(min_length=1)

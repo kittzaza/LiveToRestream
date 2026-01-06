@@ -20,7 +20,7 @@ from app.db import Base, SessionLocal, engine
 from app.models import Session as StreamSession
 from app.models import Stream, Target
 from app.redis_client import get_redis
-from app.schemas import IngestHookPayload, SessionOut, SessionSummaryOut, StreamCreate, StreamOut, StreamResolveOut, StreamStatusOut, StreamSummaryOut, TargetCreate, TargetOut, TargetPatch, TargetStatusOut, TargetSummaryOut
+from app.schemas import IngestHookPayload, SessionOut, SessionSummaryOut, StreamCreate, StreamKeyOut, StreamKeyRotateIn, StreamOut, StreamResolveOut, StreamStatusOut, StreamSummaryOut, TargetCreate, TargetOut, TargetPatch, TargetStatusOut, TargetSummaryOut
 from app.settings import settings
 
 app = FastAPI(title="Restream Control Plane")
@@ -513,6 +513,19 @@ def _find_stream_by_key(db: Session, stream_key: str) -> Stream | None:
     return db.execute(stmt).scalar_one_or_none()
 
 
+def _redis_delete_patterns(*patterns: str) -> int:
+    r = get_redis()
+    deleted = 0
+    for pattern in patterns:
+        for key in r.scan_iter(match=pattern, count=200):
+            try:
+                deleted += int(r.delete(key) or 0)
+            except Exception:
+                # Best-effort cleanup only.
+                pass
+    return deleted
+
+
 def _enqueue_start_jobs(
     stream: Stream,
     *,
@@ -614,6 +627,87 @@ def _enqueue_stop_target(stream_id: int, target_id: int, *, force: bool = False,
 def stream_key_from_stream(stream: Stream) -> str:
     crypto = StreamKeyCrypto(settings.stream_key_secret)
     return crypto.decrypt(stream.stream_key_ciphertext)
+
+
+@app.post("/streams/{stream_id}/stream_key", response_model=StreamKeyOut)
+def rotate_stream_key(stream_id: int, payload: StreamKeyRotateIn, request: Request, db: Session = Depends(get_db)) -> StreamKeyOut:
+    _rate_limit(request, "streams:stream_key")
+    stream = db.get(Stream, stream_id)
+    if not stream:
+        raise HTTPException(status_code=404, detail="stream not found")
+
+    crypto = StreamKeyCrypto(settings.stream_key_secret)
+    current_key = stream_key_from_stream(stream)
+
+    # If user provided a key, validate uniqueness.
+    # If omitted, generate a new random letters-only key.
+    if payload.stream_key is not None:
+        raw_key = payload.stream_key
+        if raw_key != current_key:
+            existing = _find_stream_by_key(db, raw_key)
+            if existing is not None and existing.id != stream.id:
+                raise HTTPException(status_code=409, detail="stream_key already in use")
+    else:
+        raw_key = None
+        for _ in range(10):
+            candidate = _generate_stream_key_letters(32)
+            existing = _find_stream_by_key(db, candidate)
+            if existing is None or existing.id == stream.id:
+                raw_key = candidate
+                break
+        if raw_key is None:
+            raise HTTPException(status_code=500, detail="failed to generate stream key")
+
+    # No-op if unchanged.
+    if raw_key == current_key:
+        return StreamKeyOut(stream_id=stream.id, stream_key=current_key)
+
+    stream.stream_key_ciphertext = crypto.encrypt(raw_key)
+    stream.stream_key_hash = stream_key_hash(raw_key)
+    db.add(stream)
+    db.commit()
+    db.refresh(stream)
+
+    # Stop restreams immediately; publisher must reconnect using the new key.
+    db.refresh(stream)
+    _enqueue_stop_jobs(stream, force=True, source="stream_key:rotate")
+
+    # Reset ingest state for this stream (best-effort).
+    r = get_redis()
+    ingest_key = f"restream:ingest:{stream.id}"
+    r.hset(ingest_key, mapping={"state": "offline"})
+    r.hdel(ingest_key, "last_publish_at")
+
+    return StreamKeyOut(stream_id=stream.id, stream_key=raw_key)
+
+
+@app.delete("/streams/{stream_id}")
+def delete_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
+    _rate_limit(request, "streams:delete")
+    stream = db.get(Stream, stream_id)
+    if not stream:
+        raise HTTPException(status_code=404, detail="stream not found")
+
+    # Stop restreams (best-effort) before deleting DB row.
+    db.refresh(stream)
+    _enqueue_stop_jobs(stream, force=True, source="stream:delete")
+
+    # Remove DB row (cascades targets/sessions).
+    db.delete(stream)
+    db.commit()
+
+    # Best-effort Redis cleanup.
+    _redis_delete_patterns(
+        f"restream:ingest:{stream_id}",
+        f"restream:target:{stream_id}:*",
+        f"restream:seq:{stream_id}:*",
+        f"restream:locks:start:{stream_id}:*",
+        f"restream:locks:stop:{stream_id}:*",
+        f"restream:pending_restart:{stream_id}:*",
+        f"restream:locks:restart:{stream_id}",
+    )
+
+    return {"ok": True}
 
 
 @app.post("/streams/{stream_id}/start")
