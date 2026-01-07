@@ -1,5 +1,6 @@
 export type StreamOut = { id: number; name: string; stream_key: string }
 export type StreamResolveOut = { id: number; name: string; is_active: boolean; created_at: string }
+export type StreamKeyOut = { stream_id: number; stream_key: string }
 export type StreamSummaryOut = {
   id: number
   name: string
@@ -66,6 +67,24 @@ export function makeApi(apiBase: string, apiToken?: string) {
       const data = await readJsonOrText(res)
       if (!res.ok) throw { status: res.status, data }
       return data as StreamOut
+    },
+
+    async rotateStreamKey(streamId: number, payload: { stream_key?: string }) {
+      const res = await fetch(`${base}/streams/${streamId}/stream_key`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(payload),
+      })
+      const data = await readJsonOrText(res)
+      if (!res.ok) throw { status: res.status, data }
+      return data as StreamKeyOut
+    },
+
+    async deleteStream(streamId: number) {
+      const res = await fetch(`${base}/streams/${streamId}`, { method: 'DELETE', headers: authHeaders() })
+      const data = await readJsonOrText(res)
+      if (!res.ok) throw { status: res.status, data }
+      return data as { ok: boolean }
     },
 
     async addTarget(streamId: number, payload: { name: string; rtmp_url: string }) {

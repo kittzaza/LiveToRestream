@@ -822,6 +822,43 @@ export default function App() {
     }
   }
 
+  const editCurrentStreamKey = async () => {
+    if (!activeStreamId) return
+
+    const next = window.prompt('New stream key (letters only). Leave blank for random.', streamKey || '')
+    if (next === null) return
+
+    const trimmed = next.trim()
+    if (trimmed && !/^[A-Za-z]+$/.test(trimmed)) {
+      setError('Edit stream key failed: key must be letters only (A–Z, a–z)')
+      return
+    }
+
+    try {
+      setError(null)
+      const rotated = await api.rotateStreamKey(activeStreamId, trimmed ? { stream_key: trimmed } : {})
+      pushEvent('warning', 'Stream key updated')
+      await handleStreamUpdate(rotated.stream_key, 'replace')
+    } catch (e: any) {
+      setApiError('Edit stream key failed', e)
+    }
+  }
+
+  const deleteCurrentStream = async () => {
+    if (!activeStreamId) return
+    const ok = window.confirm('Delete this stream?')
+    if (!ok) return
+
+    try {
+      setError(null)
+      await api.deleteStream(activeStreamId)
+      pushEvent('warning', 'Stream deleted')
+      await handleStreamUpdate('', 'replace')
+    } catch (e: any) {
+      setApiError('Delete stream failed', e)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-7xl space-y-8 p-6">
@@ -1331,6 +1368,27 @@ export default function App() {
                   >
                     Create
                   </button>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={editCurrentStreamKey}
+                      disabled={!activeStreamId}
+                      className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-violet-600 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-white transition-all hover:from-sky-500 hover:to-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteCurrentStream}
+                      disabled={!activeStreamId}
+                      className="flex items-center justify-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-red-200 transition-all hover:bg-red-500/25 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
