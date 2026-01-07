@@ -1,6 +1,7 @@
 export type StreamOut = { id: number; name: string; stream_key: string }
 export type StreamResolveOut = { id: number; name: string; is_active: boolean; created_at: string }
 export type StreamKeyOut = { stream_id: number; stream_key: string }
+export type AuthLoginOut = { access_token: string; token_type: 'bearer' }
 export type StreamSummaryOut = {
   id: number
   name: string
@@ -34,7 +35,7 @@ async function readJsonOrText(res: Response) {
 }
 
 export function makeApi(apiBase: string, apiToken?: string) {
-  const base = apiBase.replace(/\/$/, '')
+  const base = '/api'
   const token = (apiToken || '').trim()
 
   function authHeaders(): Record<string, string> {
@@ -42,8 +43,25 @@ export function makeApi(apiBase: string, apiToken?: string) {
   }
 
   return {
+    async login(payload: { username: string; password: string }) {
+      const res = await fetch(`${base}/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await readJsonOrText(res)
+      if (!res.ok) throw { status: res.status, data }
+      return data as AuthLoginOut
+    },
+
+    async logout() {
+      const res = await fetch(`${base}/auth/logout`, { method: 'POST', headers: authHeaders() })
+      const data = await readJsonOrText(res)
+      if (!res.ok) throw { status: res.status, data }
+      return data as { ok: boolean }
+    },
     async resolveStreamKey(stream_key: string) {
-      const url = new URL(`${base}/streams/resolve`)
+      const url = new URL(`${base}/streams/resolve`, window.location.origin)
       url.searchParams.set('stream_key', stream_key)
       const res = await fetch(url.toString(), { headers: authHeaders() })
       const data = await readJsonOrText(res)

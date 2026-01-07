@@ -207,27 +207,20 @@ const LivePlayer = ({ streamKey, ingestBase }: { streamKey: string; ingestBase: 
 }
 
 export default function App() {
-  const [apiBase, setApiBase] = useState(() => localStorage.getItem('apiBase') || 'http://localhost:8000')
-  const [apiToken, setApiToken] = useState(() => {
-    const stored = (localStorage.getItem('apiToken') || '').trim()
-    // In docker-compose.yml we default API_AUTH_TOKEN to "admin".
-    // Make the dashboard usable by default while still allowing users to override.
-    return stored || 'admin'
-  })
-  const api = useMemo(() => makeApi(apiBase, apiToken), [apiBase, apiToken])
+  const [accessToken, setAccessToken] = useState(() => (localStorage.getItem('accessToken') || '').trim())
+  const api = useMemo(() => makeApi('', accessToken), [accessToken])
 
   const ingestBase = useMemo(() => {
-    try {
-      const u = new URL(apiBase)
-      const host = u.hostname
-      return `${u.protocol}//${host}:8080`
-    } catch {
-      return 'http://localhost:8080'
-    }
-  }, [apiBase])
+    const loc = window.location
+    return `${loc.protocol}//${loc.hostname}:8080`
+  }, [])
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isObsReveal, setIsObsReveal] = useState(false)
+
+  const [loginUsername, setLoginUsername] = useState('admin')
+  const [loginPassword, setLoginPassword] = useState('admin')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
 
   const maskSecret = (value: string) => {
     if (!value) return ''
@@ -317,15 +310,25 @@ export default function App() {
   const humanizeApiError = (e: any) => {
     const status = e?.status
     const detail = e?.data?.detail
-    if (status === 401) return 'Unauthorized (set API Token in Settings)'
+    if (status === 401) return 'Unauthorized (login required)'
     return detail || status || 'unknown error'
   }
 
   const setApiError = (prefix: string, e: any) => {
+    if (e?.status === 401) {
+      localStorage.removeItem('accessToken')
+      setAccessToken('')
+      setIsSettingsOpen(true)
+    }
     setError(`${prefix}: ${humanizeApiError(e)}`)
   }
 
   const setTargetApiError = (targetId: number, prefix: string, e: any) => {
+    if (e?.status === 401) {
+      localStorage.removeItem('accessToken')
+      setAccessToken('')
+      setIsSettingsOpen(true)
+    }
     setTargetErrors((prev) => ({ ...prev, [targetId]: `${prefix}: ${humanizeApiError(e)}` }))
   }
 
@@ -948,33 +951,64 @@ export default function App() {
               className="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur"
             >
               <div className="flex flex-wrap items-end gap-3">
-                <div className="min-w-[280px] flex-1">
-                  <div className="text-xs font-semibold text-slate-300">API Base</div>
+                <div className="min-w-[220px]">
+                  <div className="text-xs font-semibold text-slate-300">Username</div>
                   <input
-                    value={apiBase}
-                    onChange={(e) => setApiBase(e.target.value)}
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
-                    placeholder="http://localhost:8000"
+                    placeholder="admin"
+                    disabled={!!accessToken}
                   />
                 </div>
                 <div className="min-w-[220px]">
-                  <div className="text-xs font-semibold text-slate-300">API Token</div>
+                  <div className="text-xs font-semibold text-slate-300">Password</div>
                   <input
-                    value={apiToken}
-                    onChange={(e) => setApiToken(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-mono text-white outline-none"
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
                     placeholder="admin"
+                    disabled={!!accessToken}
                   />
                 </div>
-                <button
-                  onClick={() => {
-                    localStorage.setItem('apiBase', apiBase)
-                    localStorage.setItem('apiToken', apiToken)
-                  }}
-                  className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15"
-                >
-                  Save
-                </button>
+
+                {!accessToken ? (
+                  <button
+                    onClick={async () => {
+                      try {
+                        setIsLoggingIn(true)
+                        const out = await api.login({ username: loginUsername.trim(), password: loginPassword })
+                        localStorage.setItem('accessToken', out.access_token)
+                        setAccessToken(out.access_token)
+                        setError(null)
+                      } catch (e: any) {
+                        setApiError('Login failed', e)
+                      } finally {
+                        setIsLoggingIn(false)
+                      }
+                    }}
+                    disabled={isLoggingIn}
+                    className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoggingIn ? 'Logging in…' : 'Login'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.logout()
+                      } catch {
+                        // ignore
+                      }
+                      localStorage.removeItem('accessToken')
+                      setAccessToken('')
+                    }}
+                    className="rounded-lg bg-red-500/15 px-4 py-2 text-sm font-semibold text-red-100 hover:bg-red-500/25"
+                  >
+                    Logout
+                  </button>
+                )}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                 <span className="font-semibold text-slate-300">OBS</span>

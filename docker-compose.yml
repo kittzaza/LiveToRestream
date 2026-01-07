@@ -36,7 +36,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       STREAM_KEY_SECRET: "CHANGE_ME__32+chars_minimum________________"
       INGEST_RTMP_URL: rtmp://ingest/live
-      API_AUTH_TOKEN: "admin"
+      API_AUTH_TOKEN: ""
+      JWT_SECRET: "dev-secret"
+      ADMIN_USERNAME: "admin"
+      ADMIN_PASSWORD: "admin"
       DASHBOARD_ORIGIN: "http://localhost:3000"
     ports:
       - "8000:8000"

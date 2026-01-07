@@ -9,8 +9,14 @@ class Settings(BaseSettings):
     stream_key_secret: str
     ingest_rtmp_url: str = "rtmp://ingest/live"
 
-    # Dashboard/API auth (optional). If set, all control-plane endpoints require a token.
-    # Accepted headers: Authorization: Bearer <token> OR X-API-Token: <token>
+    # Auth (dashboard/control plane)
+    # MVP: single admin username/password. Token is a signed JWT (HS256).
+    auth_enabled: bool = True
+    jwt_secret: str = "dev-secret"
+    admin_username: str = "admin"
+    admin_password: str = "admin"
+
+    # Legacy token support (optional). If set, this token is accepted as a Bearer/X-API-Token.
     api_auth_token: str | None = None
     dashboard_origin: str = "http://localhost:3000"
 

@@ -5,6 +5,7 @@ import re
 import secrets
 import string
 from contextlib import contextmanager
+from typing import Any
 from urllib.parse import urlparse
 from urllib.request import urlopen
 import xml.etree.ElementTree as ET
@@ -15,12 +16,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import jwt
+
 from app.crypto import StreamKeyCrypto, stream_key_hash
 from app.db import Base, SessionLocal, engine
 from app.models import Session as StreamSession
 from app.models import Stream, Target
 from app.redis_client import get_redis
-from app.schemas import IngestHookPayload, SessionOut, SessionSummaryOut, StreamCreate, StreamKeyOut, StreamKeyRotateIn, StreamOut, StreamResolveOut, StreamStatusOut, StreamSummaryOut, TargetCreate, TargetOut, TargetPatch, TargetStatusOut, TargetSummaryOut
+from app.schemas import AuthLoginIn, AuthLoginOut, IngestHookPayload, SessionOut, SessionSummaryOut, StreamCreate, StreamKeyOut, StreamKeyRotateIn, StreamOut, StreamResolveOut, StreamStatusOut, StreamSummaryOut, TargetCreate, TargetOut, TargetPatch, TargetStatusOut, TargetSummaryOut
 from app.settings import settings
 
 app = FastAPI(title="Restream Control Plane")
@@ -35,8 +38,7 @@ app.add_middleware(
 
 
 def _require_auth(request: Request) -> None:
-    token = settings.api_auth_token
-    if not token:
+    if not settings.auth_enabled:
         return
 
     auth = request.headers.get("authorization", "")
@@ -45,8 +47,41 @@ def _require_auth(request: Request) -> None:
     else:
         provided = (request.headers.get("x-api-token") or "").strip()
 
-    if not secrets.compare_digest(provided, token):
+    if not provided:
         raise HTTPException(status_code=401, detail="unauthorized")
+
+    # Legacy shared token (optional)
+    if settings.api_auth_token and secrets.compare_digest(provided, settings.api_auth_token):
+        return
+
+    # JWT
+    try:
+        payload: dict[str, Any] = jwt.decode(provided, settings.jwt_secret, algorithms=["HS256"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+    sub = str(payload.get("sub") or "").strip()
+    if not sub:
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+@app.post("/auth/login", response_model=AuthLoginOut)
+def auth_login(payload: AuthLoginIn) -> AuthLoginOut:
+    # MVP: single admin user from env. Token intentionally has no expiry in dev.
+    if not secrets.compare_digest(payload.username, settings.admin_username) or not secrets.compare_digest(
+        payload.password, settings.admin_password
+    ):
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    token = jwt.encode({"sub": payload.username, "iat": now}, settings.jwt_secret, algorithm="HS256")
+    return AuthLoginOut(access_token=token)
+
+
+@app.post("/auth/logout")
+def auth_logout() -> dict:
+    # Stateless JWT: logout is handled client-side by discarding the token.
+    return {"ok": True}
 
 
 def _generate_stream_key_letters(length: int = 32) -> str:

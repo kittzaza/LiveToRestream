@@ -117,3 +117,13 @@ class IngestHookPayload(BaseModel):
     name: str | None = None  # stream key
     app: str | None = None
     addr: str | None = None
+
+
+class AuthLoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class AuthLoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
