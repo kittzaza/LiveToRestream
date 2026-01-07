@@ -303,6 +303,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionOut[]>([])
   const [events, setEvents] = useState<Array<{ timestamp: string; severity: 'info' | 'warning'; message: string }>>([])
   const [metrics, setMetrics] = useState<Array<{ timestamp: string; bitrate: number; fps: number }>>([])
+  const [uptimeStartMs, setUptimeStartMs] = useState<number | null>(null)
   const [uptimeSeconds, setUptimeSeconds] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [isStartingRestreams, setIsStartingRestreams] = useState(false)
@@ -378,6 +379,7 @@ export default function App() {
     setSessions([])
     setEvents([])
     setMetrics([])
+    setUptimeStartMs(null)
     setUptimeSeconds(0)
     if (!trimmed) return
 
@@ -477,12 +479,20 @@ export default function App() {
   }, [handleStreamUpdate, ingestBase, status?.ingest_state, streamKey, streamKeyDraft])
 
   useEffect(() => {
-    let t: any
-    if (status?.ingest_state === 'live') {
-      t = setInterval(() => setUptimeSeconds((s) => s + 1), 1000)
+    if (status?.ingest_state !== 'live' || !uptimeStartMs) {
+      setUptimeSeconds(0)
+      return
     }
-    return () => clearInterval(t)
-  }, [status?.ingest_state])
+
+    const tick = () => {
+      const now = Date.now()
+      setUptimeSeconds(Math.max(0, Math.floor((now - uptimeStartMs) / 1000)))
+    }
+
+    tick()
+    const t = window.setInterval(tick, 1000)
+    return () => window.clearInterval(t)
+  }, [status?.ingest_state, uptimeStartMs])
 
   useEffect(() => {
     if (!activeStreamId) return
@@ -504,15 +514,13 @@ export default function App() {
         if (tg) setTargets(tg)
         setSessions(ss)
 
-        // Uptime: approximate from last_publish_at when present, else keep ticking from 0.
+        // Uptime: derive from ingest sessions (server-side truth) so it doesn't reset on refresh.
         if (st.ingest_state !== 'live') {
-          setUptimeSeconds(0)
-        } else if (st.last_publish_at) {
-          const start = Date.parse(st.last_publish_at)
-          if (!Number.isNaN(start)) {
-            const now = Date.now()
-            setUptimeSeconds(Math.max(0, Math.floor((now - start) / 1000)))
-          }
+          setUptimeStartMs(null)
+        } else {
+          const active = ss.find((s) => !s.ended_at) || ss[0]
+          const startedAtMs = active?.started_at ? Date.parse(active.started_at) : NaN
+          setUptimeStartMs(Number.isNaN(startedAtMs) ? null : startedAtMs)
         }
 
         // Events derived from sessions
