@@ -389,6 +389,29 @@ export default function App() {
     }
   }, [api, updateUrl])
 
+  const streamKeyDraftRef = useRef(streamKeyDraft)
+  useEffect(() => {
+    streamKeyDraftRef.current = streamKeyDraft
+  }, [streamKeyDraft])
+
+  const handleStreamUpdateRef = useRef(handleStreamUpdate)
+  useEffect(() => {
+    handleStreamUpdateRef.current = handleStreamUpdate
+  }, [handleStreamUpdate])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Treat F5 as "Load" (avoid browser refresh)
+      const isF5 = e.key === 'F5' || e.code === 'F5' || (e as any).keyCode === 116
+      if (!isF5) return
+      e.preventDefault()
+      void handleStreamUpdateRef.current(streamKeyDraftRef.current)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   const lastAutoFollowRef = useRef<{ key: string; at: number }>({ key: '', at: 0 })
 
   const getActiveLiveStreamKeysFromStat = (xmlText: string) => {
@@ -855,7 +878,7 @@ export default function App() {
             </button>
             <button
               onClick={stopAllRestreams}
-              className="flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-5 py-2 text-sm font-semibold text-red-200 transition-all hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-5 py-2 text-sm font-bold uppercase tracking-wider text-red-200 transition-all hover:bg-red-500/25 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!activeStreamId || isStartingRestreams || isStoppingRestreams}
             >
               <StopCircle className="h-4 w-4" />
@@ -1064,7 +1087,7 @@ export default function App() {
                         type="button"
                         onClick={addTarget}
                         disabled={isAddingTarget}
-                        className="rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-1 rounded-full bg-gradient-to-r from-sky-600 to-violet-600 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-white transition-all hover:from-sky-500 hover:to-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Add target
                       </button>
