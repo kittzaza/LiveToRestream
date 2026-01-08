@@ -286,8 +286,8 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isObsReveal, setIsObsReveal] = useState(false)
 
-  const [loginUsername, setLoginUsername] = useState('admin')
-  const [loginPassword, setLoginPassword] = useState('admin')
+  const [loginUsername, setLoginUsername] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
   const [isLoggingIn, setIsLoggingIn] = useState(false)
 
   const maskSecret = (value: string) => {
@@ -1029,7 +1029,7 @@ export default function App() {
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
-                    placeholder="admin"
+                    placeholder="Username"
                     disabled={!!accessToken}
                   />
                 </div>
@@ -1040,7 +1040,7 @@ export default function App() {
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none"
-                    placeholder="admin"
+                    placeholder="Password"
                     disabled={!!accessToken}
                   />
                 </div>
