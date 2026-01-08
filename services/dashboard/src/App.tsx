@@ -1041,8 +1041,14 @@ export default function App() {
                       <div className="grid grid-cols-1 gap-2">
                         <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                           <div>
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Platform</label>
+                            <label
+                              htmlFor="new-target-platform"
+                              className="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                            >
+                              Platform
+                            </label>
                             <select
+                              id="new-target-platform"
                               value={newTargetPlatform}
                               onChange={(e) => setNewTargetPlatform(e.target.value as any)}
                               className="mt-1 w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-sky-500/50"
