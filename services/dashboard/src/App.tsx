@@ -45,6 +45,26 @@ function formatUptime(totalSeconds: number) {
   return `${h}:${m}:${s}`
 }
 
+function getJwtRole(token: string): 'admin' | 'guest' | null {
+  const raw = (token || '').trim()
+  if (!raw) return null
+  const parts = raw.split('.')
+  if (parts.length < 2) return null
+  try {
+    const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = payloadB64 + '='.repeat((4 - (payloadB64.length % 4)) % 4)
+    const json = atob(padded)
+    const payload = JSON.parse(json)
+    const role = String(payload?.role || '').toLowerCase()
+    if (role === 'guest') return 'guest'
+    if (role === 'admin') return 'admin'
+    // Back-compat for old tokens
+    return 'admin'
+  } catch {
+    return null
+  }
+}
+
 const LivePlayer = ({ streamKey, ingestBase }: { streamKey: string; ingestBase: string }) => {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
@@ -97,6 +117,17 @@ const LivePlayer = ({ streamKey, ingestBase }: { streamKey: string; ingestBase: 
     const hlsUrl = `${ingestBase}/hls/${encodeURIComponent(trimmed)}/index.m3u8`
     setPlayerState({ loading: true, error: null })
 
+    const loadingTimeout = window.setTimeout(() => {
+      setPlayerState((s) => {
+        if (!s.loading) return s
+        return {
+          loading: false,
+          error:
+            'Preview is taking too long to load. If you are accessing via Cloudflared, :8080 may be blocked; the dashboard should fall back to /ingest automatically.',
+        }
+      })
+    }, 15000)
+
     if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -107,6 +138,7 @@ const LivePlayer = ({ streamKey, ingestBase }: { streamKey: string; ingestBase: 
         hls.loadSource(hlsUrl)
         hls.attachMedia(video)
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          window.clearTimeout(loadingTimeout)
           setPlayerState({ loading: false, error: null })
           tryAutoPlay()
         })
@@ -128,6 +160,8 @@ const LivePlayer = ({ streamKey, ingestBase }: { streamKey: string; ingestBase: 
                 hls.recoverMediaError()
                 break
               default:
+                window.clearTimeout(loadingTimeout)
+                setPlayerState({ loading: false, error: 'HLS player error. Try refreshing and verify ingest/HLS is reachable.' })
                 hls.destroy()
                 break
             }
@@ -135,18 +169,21 @@ const LivePlayer = ({ streamKey, ingestBase }: { streamKey: string; ingestBase: 
         })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = hlsUrl
+      window.clearTimeout(loadingTimeout)
       setPlayerState({ loading: false, error: null })
       tryAutoPlay()
     } else {
       video.src = hlsUrl
+      window.clearTimeout(loadingTimeout)
       setPlayerState({ loading: false, error: 'This browser cannot play HLS. Try Chrome/Edge.' })
     }
 
     return () => {
+      window.clearTimeout(loadingTimeout)
       if (hlsRef.current) hlsRef.current.destroy()
       hlsRef.current = null
     }
-  }, [streamKey])
+  }, [streamKey, ingestBase])
 
   const hlsLink = streamKey.trim() ? `${ingestBase}/hls/${encodeURIComponent(streamKey.trim())}/index.m3u8` : ''
 
@@ -210,9 +247,40 @@ export default function App() {
   const [accessToken, setAccessToken] = useState(() => (localStorage.getItem('accessToken') || '').trim())
   const api = useMemo(() => makeApi('', accessToken), [accessToken])
 
-  const ingestBase = useMemo(() => {
+  const authRole = useMemo(() => getJwtRole(accessToken), [accessToken])
+  const isGuest = authRole === 'guest'
+
+  const [ingestBase, setIngestBase] = useState(() => {
     const loc = window.location
     return `${loc.protocol}//${loc.hostname}:8080`
+  })
+
+  useEffect(() => {
+    const loc = window.location
+    const direct = `${loc.protocol}//${loc.hostname}:8080`
+    const proxied = `${loc.origin}/ingest`
+
+    if (loc.hostname === 'localhost' || loc.hostname === '127.0.0.1') return
+
+    let cancelled = false
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 800)
+
+    fetch(`${direct}/stat`, { cache: 'no-store', mode: 'no-cors', signal: controller.signal })
+      .then(() => {
+        // Reachable: keep direct (legacy behavior).
+      })
+      .catch(() => {
+        if (cancelled) return
+        setIngestBase(proxied)
+      })
+      .finally(() => window.clearTimeout(timeout))
+
+    return () => {
+      cancelled = true
+      controller.abort()
+      window.clearTimeout(timeout)
+    }
   }, [])
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -507,7 +575,7 @@ export default function App() {
       try {
         const [st, tg, ss] = await Promise.all([
           api.status(streamId),
-          isEditingTarget ? Promise.resolve(null) : api.listTargets(streamId),
+          isGuest || isEditingTarget ? Promise.resolve(null) : api.listTargets(streamId),
           api.sessions(streamId),
         ])
 
@@ -916,22 +984,26 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={startRestreams}
-              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-violet-600 px-5 py-2 text-sm font-bold uppercase tracking-wider text-white transition-all hover:from-sky-500 hover:to-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!activeStreamId || isStartingRestreams || isStoppingRestreams}
-            >
-              <Play className="h-4 w-4" />
-              {isStartingRestreams ? 'Starting…' : 'Start Restreams'}
-            </button>
-            <button
-              onClick={stopAllRestreams}
-              className="flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-5 py-2 text-sm font-bold uppercase tracking-wider text-red-200 transition-all hover:bg-red-500/25 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!activeStreamId || isStartingRestreams || isStoppingRestreams}
-            >
-              <StopCircle className="h-4 w-4" />
-              {isStoppingRestreams ? 'Stopping…' : 'Stop'}
-            </button>
+            {!isGuest ? (
+              <>
+                <button
+                  onClick={startRestreams}
+                  className="flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-violet-600 px-5 py-2 text-sm font-bold uppercase tracking-wider text-white transition-all hover:from-sky-500 hover:to-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!activeStreamId || isStartingRestreams || isStoppingRestreams}
+                >
+                  <Play className="h-4 w-4" />
+                  {isStartingRestreams ? 'Starting…' : 'Start Restreams'}
+                </button>
+                <button
+                  onClick={stopAllRestreams}
+                  className="flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-5 py-2 text-sm font-bold uppercase tracking-wider text-red-200 transition-all hover:bg-red-500/25 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!activeStreamId || isStartingRestreams || isStoppingRestreams}
+                >
+                  <StopCircle className="h-4 w-4" />
+                  {isStoppingRestreams ? 'Stopping…' : 'Stop'}
+                </button>
+              </>
+            ) : null}
             <button
               onClick={() => setIsSettingsOpen((v) => !v)}
               className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10"
@@ -974,25 +1046,46 @@ export default function App() {
                 </div>
 
                 {!accessToken ? (
-                  <button
-                    onClick={async () => {
-                      try {
-                        setIsLoggingIn(true)
-                        const out = await api.login({ username: loginUsername.trim(), password: loginPassword })
-                        localStorage.setItem('accessToken', out.access_token)
-                        setAccessToken(out.access_token)
-                        setError(null)
-                      } catch (e: any) {
-                        setApiError('Login failed', e)
-                      } finally {
-                        setIsLoggingIn(false)
-                      }
-                    }}
-                    disabled={isLoggingIn}
-                    className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isLoggingIn ? 'Logging in…' : 'Login'}
-                  </button>
+                  <>
+                    <button
+                      onClick={async () => {
+                        try {
+                          setIsLoggingIn(true)
+                          const out = await api.login({ username: loginUsername.trim(), password: loginPassword })
+                          localStorage.setItem('accessToken', out.access_token)
+                          setAccessToken(out.access_token)
+                          setError(null)
+                        } catch (e: any) {
+                          setApiError('Login failed', e)
+                        } finally {
+                          setIsLoggingIn(false)
+                        }
+                      }}
+                      disabled={isLoggingIn}
+                      className="rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isLoggingIn ? 'Logging in…' : 'Login'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          setIsLoggingIn(true)
+                          const out = await api.guestLogin()
+                          localStorage.setItem('accessToken', out.access_token)
+                          setAccessToken(out.access_token)
+                          setError(null)
+                        } catch (e: any) {
+                          setApiError('Guest login failed', e)
+                        } finally {
+                          setIsLoggingIn(false)
+                        }
+                      }}
+                      disabled={isLoggingIn}
+                      className="rounded-lg border border-white/10 bg-black/20 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-black/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Continue as Guest
+                    </button>
+                  </>
                 ) : (
                   <button
                     onClick={async () => {
@@ -1029,36 +1122,37 @@ export default function App() {
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           <div className="space-y-6 lg:col-span-1">
-            <section className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Restream Targets</h2>
-              </div>
+            {!isGuest ? (
+              <section className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Restream Targets</h2>
+                </div>
 
-              <div className="space-y-4">
-                {activeStreamId && (
-                  <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-4">
-                    <div className="grid grid-cols-1 gap-2">
+                <div className="space-y-4">
+                  {activeStreamId && (
+                    <div className="space-y-2 rounded-lg border border-white/10 bg-white/5 p-4">
                       <div className="grid grid-cols-1 gap-2">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                          <div>
-                            <label
-                              htmlFor="new-target-platform"
-                              className="text-[10px] font-bold uppercase tracking-wider text-slate-400"
-                            >
-                              Platform
-                            </label>
-                            <select
-                              id="new-target-platform"
-                              value={newTargetPlatform}
-                              onChange={(e) => setNewTargetPlatform(e.target.value as any)}
-                              className="mt-1 w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-sky-500/50"
-                            >
-                              <option value="custom">Custom RTMP</option>
-                              <option value="youtube">YouTube</option>
-                              <option value="twitch">Twitch</option>
-                              <option value="facebook">Facebook</option>
-                            </select>
-                          </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                            <div>
+                              <label
+                                htmlFor="new-target-platform"
+                                className="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+                              >
+                                Platform
+                              </label>
+                              <select
+                                id="new-target-platform"
+                                value={newTargetPlatform}
+                                onChange={(e) => setNewTargetPlatform(e.target.value as any)}
+                                className="mt-1 w-full rounded border border-white/10 bg-black/30 px-3 py-2 text-xs text-white outline-none focus:border-sky-500/50"
+                              >
+                                <option value="custom">Custom RTMP</option>
+                                <option value="youtube">YouTube</option>
+                                <option value="twitch">Twitch</option>
+                                <option value="facebook">Facebook</option>
+                              </select>
+                            </div>
 
                           {newTargetPlatform !== 'custom' ? (
                             <div>
@@ -1350,8 +1444,9 @@ export default function App() {
                     {activeStreamId ? 'No targets configured' : 'Load a stream key to see targets'}
                   </div>
                 )}
-              </div>
-            </section>
+                </div>
+              </section>
+            ) : null}
 
             <section className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur">
               <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
@@ -1385,60 +1480,62 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur">
-                <h3 className="mb-1 flex items-center gap-2 text-base font-semibold">
-                  <KeyRound className="h-4 w-4 text-sky-300" />
-                  Create stream key
-                </h3>
-                <div className="mb-3 text-xs text-slate-400">Optional custom key must be letters only (A–Z, a–z).</div>
+              {!isGuest ? (
+                <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <h3 className="mb-1 flex items-center gap-2 text-base font-semibold">
+                    <KeyRound className="h-4 w-4 text-sky-300" />
+                    Create stream key
+                  </h3>
+                  <div className="mb-3 text-xs text-slate-400">Optional custom key must be letters only (A–Z, a–z).</div>
 
-                <div className="space-y-2">
-                  <input
-                    value={createStreamName}
-                    onChange={(e) => setCreateStreamName(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50"
-                    placeholder="Stream name (e.g. Demo)"
-                  />
-                  <input
-                    value={createStreamKey}
-                    onChange={(e) => setCreateStreamKey(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') createStream()
-                    }}
-                    className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-mono text-white outline-none focus:border-sky-500/50"
-                    placeholder="Stream key (optional, e.g. demo)"
-                  />
-                  <button
-                    type="button"
-                    onClick={createStream}
-                    disabled={isCreatingStream}
-                    className="w-full rounded-lg bg-gradient-to-r from-sky-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:from-sky-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Create
-                  </button>
-
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <input
+                      value={createStreamName}
+                      onChange={(e) => setCreateStreamName(e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white outline-none focus:border-sky-500/50"
+                      placeholder="Stream name (e.g. Demo)"
+                    />
+                    <input
+                      value={createStreamKey}
+                      onChange={(e) => setCreateStreamKey(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') createStream()
+                      }}
+                      className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm font-mono text-white outline-none focus:border-sky-500/50"
+                      placeholder="Stream key (optional, e.g. demo)"
+                    />
                     <button
                       type="button"
-                      onClick={editCurrentStreamKey}
-                      disabled={!activeStreamId}
-                      className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-violet-600 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-white transition-all hover:from-sky-500 hover:to-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={createStream}
+                      disabled={isCreatingStream}
+                      className="w-full rounded-lg bg-gradient-to-r from-sky-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:from-sky-500 hover:to-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Pencil className="h-4 w-4" />
-                      Edit
+                      Create
                     </button>
-                    <button
-                      type="button"
-                      onClick={deleteCurrentStream}
-                      disabled={!activeStreamId}
-                      className="flex items-center justify-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-red-200 transition-all hover:bg-red-500/25 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Delete
-                    </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={editCurrentStreamKey}
+                        disabled={!activeStreamId}
+                        className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-sky-600 to-violet-600 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-white transition-all hover:from-sky-500 hover:to-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteCurrentStream}
+                        disabled={!activeStreamId}
+                        className="flex items-center justify-center gap-2 rounded-full border border-red-500/30 bg-red-500/15 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-red-200 transition-all hover:bg-red-500/25 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
             </section>
 
             <section className="rounded-xl border border-white/10 bg-white/5 p-6 backdrop-blur">

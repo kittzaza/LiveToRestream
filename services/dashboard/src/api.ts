@@ -54,6 +54,13 @@ export function makeApi(apiBase: string, apiToken?: string) {
       return data as AuthLoginOut
     },
 
+    async guestLogin() {
+      const res = await fetch(`${base}/auth/guest`, { method: 'POST' })
+      const data = await readJsonOrText(res)
+      if (!res.ok) throw { status: res.status, data }
+      return data as AuthLoginOut
+    },
+
     async logout() {
       const res = await fetch(`${base}/auth/logout`, { method: 'POST', headers: authHeaders() })
       const data = await readJsonOrText(res)

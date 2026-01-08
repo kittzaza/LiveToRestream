@@ -94,6 +94,26 @@ services:
       api:
         condition: service_healthy
 
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: live_cloudflared
+    restart: always
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+
+  # Cloudflare Zero Trust public hostname often points to http://localhost:3000.
+  # When cloudflared runs in Docker, that "localhost" is inside the container.
+  # This sidecar binds ::1:3000 and forwards to the dashboard service.
+  cloudflared_origin:
+    image: alpine/socat:latest
+    restart: always
+    network_mode: service:cloudflared
+    depends_on:
+      dashboard:
+        condition: service_started
+    command: ["-dd", "TCP6-LISTEN:3000,fork,reuseaddr", "TCP:dashboard:80"]
+
 volumes:
   pg_data:
   redis_data:

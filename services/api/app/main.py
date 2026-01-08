@@ -52,6 +52,7 @@ def _require_auth(request: Request) -> None:
 
     # Legacy shared token (optional)
     if settings.api_auth_token and secrets.compare_digest(provided, settings.api_auth_token):
+        request.state.auth = {"sub": "legacy", "role": "admin"}
         return
 
     # JWT
@@ -64,6 +65,26 @@ def _require_auth(request: Request) -> None:
     if not sub:
         raise HTTPException(status_code=401, detail="unauthorized")
 
+    role_raw = str(payload.get("role") or "").strip().lower()
+    if role_raw in {"admin", "guest"}:
+        role = role_raw
+    else:
+        # Backward compatibility: old tokens had no role claim.
+        role = "admin" if sub == settings.admin_username else "guest"
+
+    request.state.auth = {"sub": sub, "role": role}
+
+
+def _require_admin(request: Request) -> None:
+    _require_auth(request)
+    role = None
+    try:
+        role = (request.state.auth or {}).get("role")
+    except Exception:
+        role = None
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="forbidden")
+
 
 @app.post("/auth/login", response_model=AuthLoginOut)
 def auth_login(payload: AuthLoginIn) -> AuthLoginOut:
@@ -74,7 +95,14 @@ def auth_login(payload: AuthLoginIn) -> AuthLoginOut:
         raise HTTPException(status_code=401, detail="invalid credentials")
 
     now = int(dt.datetime.now(dt.timezone.utc).timestamp())
-    token = jwt.encode({"sub": payload.username, "iat": now}, settings.jwt_secret, algorithm="HS256")
+    token = jwt.encode({"sub": payload.username, "role": "admin", "iat": now}, settings.jwt_secret, algorithm="HS256")
+    return AuthLoginOut(access_token=token)
+
+
+@app.post("/auth/guest", response_model=AuthLoginOut)
+def auth_guest() -> AuthLoginOut:
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    token = jwt.encode({"sub": "guest", "role": "guest", "iat": now}, settings.jwt_secret, algorithm="HS256")
     return AuthLoginOut(access_token=token)
 
 
@@ -247,6 +275,7 @@ def healthz() -> dict:
 @app.post("/streams", response_model=StreamOut)
 def create_stream(payload: StreamCreate, request: Request, db: Session = Depends(get_db)) -> StreamOut:
     _rate_limit(request, "streams:create")
+    _require_admin(request)
     crypto = StreamKeyCrypto(settings.stream_key_secret)
 
     # Stream key rules:
@@ -333,6 +362,7 @@ def resolve_stream_by_key(
 @app.post("/streams/{stream_id}/targets", response_model=TargetOut)
 def add_target(stream_id: int, payload: TargetCreate, request: Request, db: Session = Depends(get_db)) -> TargetOut:
     _rate_limit(request, "targets:add")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -354,6 +384,7 @@ def add_target(stream_id: int, payload: TargetCreate, request: Request, db: Sess
 @app.get("/streams/{stream_id}/targets", response_model=list[TargetOut])
 def list_targets(stream_id: int, request: Request, db: Session = Depends(get_db)) -> list[TargetOut]:
     _rate_limit(request, "targets:list")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -364,6 +395,7 @@ def list_targets(stream_id: int, request: Request, db: Session = Depends(get_db)
 @app.patch("/targets/{target_id}", response_model=TargetOut)
 def patch_target(target_id: int, payload: TargetPatch, request: Request, db: Session = Depends(get_db)) -> TargetOut:
     _rate_limit(request, "targets:patch")
+    _require_admin(request)
     target = db.get(Target, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="target not found")
@@ -393,6 +425,7 @@ def patch_target(target_id: int, payload: TargetPatch, request: Request, db: Ses
 @app.post("/targets/{target_id}/enable", response_model=TargetOut)
 def enable_target(target_id: int, request: Request, db: Session = Depends(get_db)) -> TargetOut:
     _rate_limit(request, "targets:enable")
+    _require_admin(request)
     target = db.get(Target, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="target not found")
@@ -418,6 +451,7 @@ def enable_target(target_id: int, request: Request, db: Session = Depends(get_db
 @app.post("/targets/{target_id}/disable", response_model=TargetOut)
 def disable_target(target_id: int, request: Request, db: Session = Depends(get_db)) -> TargetOut:
     _rate_limit(request, "targets:disable")
+    _require_admin(request)
     target = db.get(Target, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="target not found")
@@ -436,6 +470,7 @@ def disable_target(target_id: int, request: Request, db: Session = Depends(get_d
 @app.post("/targets/{target_id}/restart")
 def restart_target(target_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "targets:restart")
+    _require_admin(request)
     target = db.get(Target, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="target not found")
@@ -479,6 +514,7 @@ def restart_target(target_id: int, request: Request, db: Session = Depends(get_d
 @app.delete("/targets/{target_id}")
 def delete_target(target_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "targets:delete")
+    _require_admin(request)
     target = db.get(Target, target_id)
     if not target:
         raise HTTPException(status_code=404, detail="target not found")
@@ -496,6 +532,7 @@ def list_all_targets(
     offset: int = Query(0, ge=0),
 ) -> list[TargetSummaryOut]:
     _rate_limit(request, "targets:list_all")
+    _require_admin(request)
     stmt = select(Target)
     if stream_id is not None:
         stmt = stmt.where(Target.stream_id == stream_id)
@@ -667,6 +704,7 @@ def stream_key_from_stream(stream: Stream) -> str:
 @app.post("/streams/{stream_id}/stream_key", response_model=StreamKeyOut)
 def rotate_stream_key(stream_id: int, payload: StreamKeyRotateIn, request: Request, db: Session = Depends(get_db)) -> StreamKeyOut:
     _rate_limit(request, "streams:stream_key")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -719,6 +757,7 @@ def rotate_stream_key(stream_id: int, payload: StreamKeyRotateIn, request: Reque
 @app.delete("/streams/{stream_id}")
 def delete_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "streams:delete")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -748,6 +787,7 @@ def delete_stream(stream_id: int, request: Request, db: Session = Depends(get_db
 @app.post("/streams/{stream_id}/start")
 def start_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "streams:start")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -778,6 +818,7 @@ def start_stream(stream_id: int, request: Request, db: Session = Depends(get_db)
 @app.post("/streams/{stream_id}/stop")
 def stop_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "streams:stop")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -792,6 +833,7 @@ def stop_stream(stream_id: int, request: Request, db: Session = Depends(get_db))
 @app.post("/streams/{stream_id}/restart")
 def restart_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "streams:restart")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")
@@ -836,6 +878,7 @@ def restart_stream(stream_id: int, request: Request, db: Session = Depends(get_d
 @app.post("/streams/{stream_id}/reconnect")
 def reconnect_stream(stream_id: int, request: Request, db: Session = Depends(get_db)) -> dict:
     _rate_limit(request, "streams:restart")
+    _require_admin(request)
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(status_code=404, detail="stream not found")

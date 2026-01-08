@@ -1,9 +1,9 @@
 # LivetoRestream (docker-compose)
 
-
 This repository runs a small Restream platform locally using Docker Compose.
 
 At a high level:
+
 - **Ingest (data-in)**: Nginx-RTMP accepts RTMP publishes and exposes a `/stat` XML endpoint.
 - **Control plane (API)**: FastAPI validates stream keys, stores streams/targets/sessions, and queues jobs for the worker.
 - **Data plane (worker)**: FFmpeg processes pull from ingest and push to each target RTMP endpoint.
@@ -15,37 +15,38 @@ At a high level:
 ## Services & Ports
 
 Local ports exposed by docker-compose:
-- **Dashboard**: http://localhost:3000
-- **API (direct)**: http://localhost:8000
+
+- **Dashboard**: <http://localhost:3000>
+- **API (direct)**: <http://localhost:8000>
 - **Ingest RTMP**: rtmp://localhost:1935
-- **Ingest HTTP** (`/stat`, `/hls`, `/healthz`): http://localhost:8080
+- **Ingest HTTP** (`/stat`, `/hls`, `/healthz`): <http://localhost:8080>
 - **Postgres**: localhost:5432
 - **Redis**: localhost:6379
 
 Important: the dashboard calls the API through an **nginx reverse-proxy path**:
+
 - Dashboard → **`/api/*`** → API container (no API Base URL shown in UI).
 
 ---
 
 ## Quick Start
 
-1) Build and start the stack:
+1. Build and start the stack:
 
 ```bash
 docker compose up --build
 ```
 
-2) Open the dashboard:
+2. Open the dashboard:
 
-- http://localhost:3000
+- <http://localhost:3000>
 
-3) Login (dev default):
+3. Login (dev default):
 
 - Username: `admin`
 - Password: `admin`
 
-
-  **does not expire**.
+Tokens intentionally **do not expire** in dev.
 - If the dashboard gets a `401`, it auto-opens Settings and prompts you to log in again.
 
 ---
@@ -64,6 +65,7 @@ docker compose up --build
 OBS publishes into the ingest service (Nginx-RTMP) under application `live`.
 
 OBS settings:
+
 - Server: `rtmp://localhost/live`
 - Stream Key: `<your_stream_key>`
 
@@ -78,6 +80,7 @@ Notes:
 Targets are RTMP/RTMPS destinations the worker pushes to.
 
 Supported target types in the dashboard UI:
+
 - YouTube: `rtmps://a.rtmps.youtube.com/live2/<key>`
 - Twitch: `rtmp://live.twitch.tv/app/<key>`
 - Facebook: `rtmps://live-api-s.facebook.com:443/rtmp/<key>`
@@ -85,6 +88,7 @@ Supported target types in the dashboard UI:
   - You can paste a full `rtmp(s)://...` URL, or use base + stream key to build the final URL.
 
 Worker behavior note:
+
 - If the output URL contains `facebook.com`, the worker transcodes to a Facebook-friendly baseline.
 - Otherwise it uses stream-copy (`-c:v copy -c:a copy`).
 
@@ -95,13 +99,16 @@ Worker behavior note:
 Dashboard authentication is handled by the API.
 
 Endpoints:
+
 - `POST /auth/login` → returns `{ access_token, token_type }`
 - `POST /auth/logout` → stateless; the dashboard just discards the token
 
 The dashboard sends:
+
 - `Authorization: Bearer <access_token>`
 
 Dev defaults (docker-compose):
+
 - Username: `admin`
 - Password: `admin`
 
@@ -213,7 +220,8 @@ These are internal hooks used by ingest; they are not meant to be called manuall
 ### Ingest status XML
 
 Check what streams are currently publishing:
-- http://localhost:8080/stat
+
+- <http://localhost:8080/stat>
 
 You should see a section like:
 
@@ -239,23 +247,24 @@ The worker retries automatically and will keep the target in `starting` rather t
 
 ### Common issues
 
-1) **Dashboard Load doesn’t resolve stream key**
-   - Ensure you are logged in.
-   - Ensure the API container is healthy.
+1. **Dashboard Load doesn’t resolve stream key**
+  - Ensure you are logged in.
+  - Ensure the API container is healthy.
 
-2) **Publish rejected by ingest**
-   - Stream key is unknown → create the stream first.
-   - Key contains non-letters → only A–Z/a–z are allowed.
+2. **Publish rejected by ingest**
+  - Stream key is unknown → create the stream first.
+  - Key contains non-letters → only A–Z/a–z are allowed.
 
-3) **Worker can’t pull ingest**
-   - `/stat` must show the stream key under application `live`.
-   - Make sure OBS is publishing to `rtmp://localhost/live`.
+3. **Worker can’t pull ingest**
+  - `/stat` must show the stream key under application `live`.
+  - Make sure OBS is publishing to `rtmp://localhost/live`.
 
 ---
 
 ## Configuration (docker-compose)
 
 Key env vars used in docker-compose:
+
 - API:
   - `ADMIN_USERNAME`, `ADMIN_PASSWORD` (dev login)
   - `JWT_SECRET`
@@ -269,6 +278,7 @@ Key env vars used in docker-compose:
 ## Production Notes (high level)
 
 This is a dev-friendly setup. For production you would typically add:
+
 - Expiring tokens + refresh strategy
 - Proper password hashing + multiple users/roles
 - Strong secrets management
