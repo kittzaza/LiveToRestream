@@ -1006,10 +1006,12 @@ export default function App() {
             ) : null}
             <button
               onClick={() => setIsSettingsOpen((v) => !v)}
-              className="rounded-full border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10"
-              title="Settings"
+              className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-slate-200 hover:bg-white/10"
+              title="Login"
+              aria-label="Login"
             >
               <Settings className="h-4 w-4" />
+              <span className="text-xs font-semibold uppercase tracking-wider">Login</span>
             </button>
           </div>
         </header>

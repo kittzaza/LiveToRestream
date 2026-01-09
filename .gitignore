@@ -48,3 +48,7 @@ services/dashboard/dist/
 # Ignore API/worker virtualenvs
 services/api/.venv/
 services/worker/.venv/
+
+# Ignore local docs
+/architecture diagram.md
+/workflow_api.md

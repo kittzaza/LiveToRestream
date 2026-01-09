@@ -37,17 +37,18 @@ Important: the dashboard calls the API through an **nginx reverse-proxy path**:
 docker compose up --build
 ```
 
-2. Open the dashboard:
+1. Open the dashboard:
 
 - <http://localhost:3000>
 
-3. Login (dev default):
+1. Login (dev default):
 
 - Username: `admin`
 - Password: `admin`
 
 Tokens intentionally **do not expire** in dev.
-- If the dashboard gets a `401`, it auto-opens Settings and prompts you to log in again.
+
+If the dashboard gets a `401`, it auto-opens Settings and prompts you to log in again.
 
 ---
 
@@ -70,6 +71,7 @@ OBS settings:
 - Stream Key: `<your_stream_key>`
 
 Notes:
+
 - Stream keys are restricted to English letters only (A–Z, a–z).
 - The ingest server will reject publishing if the stream key is unknown.
 
@@ -191,6 +193,7 @@ curl -s -X POST http://localhost:8000/streams/<stream_id>/stream_key \
 ```
 
 Important:
+
 - Rotating a key stops restream jobs immediately.
 - OBS must reconnect using the new key.
 
@@ -207,6 +210,7 @@ Deleting the stream removes its key from the system and cascades targets/session
 ## Ingest Webhooks (How publishing is validated)
 
 When OBS publishes to ingest (`application live`), Nginx-RTMP calls the API:
+
 - `POST /ingest/on_publish` (validate stream key, open a session, start targets)
 - `POST /ingest/on_update` (heartbeat while publishing)
 - `POST /ingest/on_publish_done` (close session)
@@ -248,16 +252,16 @@ The worker retries automatically and will keep the target in `starting` rather t
 ### Common issues
 
 1. **Dashboard Load doesn’t resolve stream key**
-  - Ensure you are logged in.
-  - Ensure the API container is healthy.
 
-2. **Publish rejected by ingest**
-  - Stream key is unknown → create the stream first.
-  - Key contains non-letters → only A–Z/a–z are allowed.
+Ensure you are logged in and the API container is healthy.
 
-3. **Worker can’t pull ingest**
-  - `/stat` must show the stream key under application `live`.
-  - Make sure OBS is publishing to `rtmp://localhost/live`.
+1. **Publish rejected by ingest**
+
+Create the stream first (unknown keys are rejected). Only A–Z/a–z are allowed.
+
+1. **Worker can’t pull ingest**
+
+`/stat` must show the stream key under application `live`. Verify OBS is publishing to `rtmp://localhost/live`.
 
 ---
 
