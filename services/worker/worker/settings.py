@@ -1,3 +1,6 @@
+import socket
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,7 +12,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     ingest_rtmp_url: str = "rtmp://ingest/live"
     ingest_stat_url: str = "http://ingest:8080/stat"
-    worker_node_name: str = "worker-1"
+    # Used as the Redis Stream consumer name.
+    # If you scale the worker service (multiple containers), this must be unique per container.
+    worker_node_name: str = Field(default_factory=socket.gethostname)
     # Microseconds. Forces FFmpeg to error out if network IO stalls so the worker can retry.
     ffmpeg_rw_timeout_us: int = 15_000_000
 

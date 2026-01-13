@@ -59,6 +59,19 @@ If the dashboard gets a `401`, it auto-opens Settings and prompts you to log in 
 3) Add one or more restream targets.
 4) Click **Start Restreams**.
 
+### Create multiple stream keys (Dashboard)
+
+You can create **more than 3** stream keys. Each OBS/camera should use its own stream key.
+
+1. Login as `admin`.
+2. In the **Stream Status** panel, use **Create stream key**.
+3. Enter a stream name (required) and an optional custom stream key.
+
+Rules:
+
+- Custom stream keys must be letters only: `A–Z`, `a–z`.
+- If you leave the key blank, the API will auto-generate one.
+
 ---
 
 ## OBS (Publishing to Ingest)
@@ -136,6 +149,14 @@ Export the token (bash example):
 TOKEN="<paste access_token>"
 ```
 
+PowerShell example:
+
+```powershell
+$token = (Invoke-RestMethod -Method Post -Uri http://localhost:8000/auth/login \
+  -ContentType 'application/json' \
+  -Body '{"username":"admin","password":"admin"}').access_token
+```
+
 ### 2) Create a stream
 
 Create with auto/default key:
@@ -145,6 +166,18 @@ curl -s http://localhost:8000/streams \
   -H "content-type: application/json" \
   -H "authorization: Bearer $TOKEN" \
   -d '{"name":"demo"}'
+```
+
+PowerShell example (create many keys):
+
+```powershell
+$headers = @{ Authorization = "Bearer $token" }
+1..5 | ForEach-Object {
+  Invoke-RestMethod -Method Post -Uri http://localhost:8000/streams \
+    -Headers $headers \
+    -ContentType 'application/json' \
+    -Body (ConvertTo-Json @{ name = "cam-$($_)" })
+}
 ```
 
 Create with a custom key:
@@ -258,6 +291,26 @@ Ensure you are logged in and the API container is healthy.
 1. **Publish rejected by ingest**
 
 Create the stream first (unknown keys are rejected). Only A–Z/a–z are allowed.
+
+---
+
+## Scaling notes (concurrency)
+
+What scales with "how many streams" is mostly:
+
+- **Ingest**: number of RTMP publishers + HLS viewers + `/stat` calls.
+- **Worker**: number of active FFmpeg processes (roughly: `#active_streams × #enabled_targets`).
+- **Network**: outbound bitrate (roughly: `sum(stream_bitrate × targets_per_stream)`; transcoding costs CPU too).
+
+### Scale workers (recommended first)
+
+You can run multiple worker containers to handle more targets in parallel:
+
+```bash
+docker compose up -d --scale worker=3
+```
+
+Workers use a unique consumer name automatically (hostname) so replicas do not collide.
 
 1. **Worker can’t pull ingest**
 

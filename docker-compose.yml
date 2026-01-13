@@ -68,7 +68,6 @@ services:
       REDIS_URL: redis://redis:6379/0
       INGEST_RTMP_URL: rtmp://ingest/live
       INGEST_STAT_URL: http://ingest:8080/stat
-      WORKER_NODE_NAME: worker-1
     depends_on:
       redis:
         condition: service_healthy
